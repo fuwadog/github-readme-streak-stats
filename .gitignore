@@ -1,27 +1,48 @@
-# Generated files
+# Dependencies
 vendor/
 node_modules/
-*.log
 composer.phar
-yarn.lock
 package-lock.json
-.vercel
-
-# Cache directory
-cache/
-
-# Local Configuration
-.DS_Store
 
 # Environment
 .env
+.env.local
 .php-version
 DOCKER_ENV
 docker_tag
 
+# Generated/Downloaded
+api/cacert.pem
+*.pem
+
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# PHP local
+# OS
+.DS_Store
+Thumbs.db
+
+# Cache/build
+cache/
+.vercel/**
+!.vercel/project.json
+coverage/
+
+# PHP/PHPUnit
 php-*/
+.phpunit.result.cache
+.php_cs.cache
+
+# Logs
+*.log
+
+# Debug/development files (remove before production)
+debug_*.php
+api/test_*.php
+
+# Lock files (use composer.lock for production deps)
+yarn.lock

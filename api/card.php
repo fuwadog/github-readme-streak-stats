@@ -367,7 +367,7 @@ function formatNumber(float $num, string $localeCode, bool $useShortNumbers): st
  *
  * @throws InvalidArgumentException If a locale does not exist
  */
-function generateCard(array $stats, array $params = null): string
+function generateCard(array $stats, ?array $params = null): string
 {
     $params = $params ?? $_REQUEST;
 
@@ -615,7 +615,7 @@ function generateCard(array $stats, array $params = null): string
  * @param array<string,string>|NULL $params Request parameters
  * @return string The generated SVG error card
  */
-function generateErrorCard(string $message, array $params = null): string
+function generateErrorCard(string $message, ?array $params = null): string
 {
     $params = $params ?? $_REQUEST;
 
@@ -763,10 +763,37 @@ function convertHexColors(string $svg): string
  *
  * @param string $svg The SVG for the card as a string
  * @param int $cardWidth The width of the card
+ * @param int $cardHeight The height of the card
  * @return string The generated PNG data
+ *
+ * @throws InvalidArgumentException if conversion fails
+ *
+ * Note: PNG conversion requires Inkscape which is only available in local/dev environments.
+ * On serverless platforms (Vercel, Heroku, etc.), PNG conversion is not supported.
+ * Use type=svg instead for deployment on these platforms.
  */
 function convertSvgToPng(string $svg, int $cardWidth, int $cardHeight): string
 {
+    // Check if shell_exec is available (disabled on many serverless platforms)
+    if (!function_exists("shell_exec") || shell_exec("echo test") === null) {
+        throw new InvalidArgumentException(
+            "PNG output is not supported on this platform. " .
+                "PNG conversion requires Inkscape which is not available on serverless platforms. " .
+                "Please use type=svg instead.",
+            500,
+        );
+    }
+
+    // Check if inkscape is available
+    $inkscapeCheck = shell_exec("inkscape --version 2>&1"); // skipcq: PHP-A1009
+    if (empty($inkscapeCheck) || strpos($inkscapeCheck, "Inkscape") === false) {
+        throw new InvalidArgumentException(
+            "PNG output requires Inkscape to be installed on the server. " .
+                "Please use type=svg instead, or install Inkscape.",
+            500,
+        );
+    }
+
     // trim off all whitespaces to make it a valid SVG string
     $svg = trim($svg);
 
@@ -807,7 +834,7 @@ function convertSvgToPng(string $svg, int $cardWidth, int $cardHeight): string
  * @param int $errorCode The HTTP error code (used for JSON responses)
  * @return array The Content-Type header and the response body, and status code in case of an error
  */
-function generateOutput(string|array $output, array $params = null, int $errorCode = 200): array
+function generateOutput(string|array $output, ?array $params = null, int $errorCode = 200): array
 {
     $params = $params ?? $_REQUEST;
 

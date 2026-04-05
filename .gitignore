@@ -22,3 +22,6 @@ docker_tag
 # IDE
 .vscode/
 .idea/
+
+# PHP local
+php-*/

@@ -12,12 +12,6 @@
   "license": "MIT",
   "version": "1.6.0",
   "homepage": "https://github.com/DenverCoder1/github-readme-streak-stats",
-  "repositories": [
-      {
-          "type": "vcs",
-          "url": "https://github.com/DenverCoder1/github-readme-streak-stats"
-      }
-  ],
   "support": {
     "issues": "https://github.com/DenverCoder1/github-readme-streak-stats/issues",
     "source": "https://github.com/DenverCoder1/github-readme-streak-stats"
@@ -30,6 +24,7 @@
   "require": {
     "php": "^8.2",
     "ext-intl": "*",
+    "ext-curl": "*",
     "vlucas/phpdotenv": "^5.3"
   },
   "require-dev": {

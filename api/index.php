@@ -6,7 +6,6 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 1) . "/vendor/autoload.php";
 require_once "stats.php";
 require_once "card.php";
-require_once "cache.php";
 
 // load .env
 $dotenv = \Dotenv\Dotenv::createImmutable(dirname(__DIR__, 1));
@@ -14,14 +13,11 @@ $dotenv->safeLoad();
 
 // if environment variables are not loaded, display error
 if (!isset($_ENV["TOKEN"])) {
-    $message = file_exists(dirname(__DIR__, 1) . "/.env")
-        ? "Missing token in config. Check Contributing.md for details."
-        : ".env was not found. Check Contributing.md for details.";
-    renderOutput($message, 500);
+    renderOutput("Missing GitHub token. Check Contributing.md for details.", 500);
 }
 
 // set cache to refresh once per day (24 hours)
-$cacheSeconds = CACHE_DURATION;
+$cacheSeconds = 24 * 60 * 60;
 header("Expires: " . gmdate("D, d M Y H:i:s", time() + $cacheSeconds) . " GMT");
 header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
 header("Cache-Control: public, max-age=$cacheSeconds");
@@ -39,39 +35,16 @@ try {
     $mode = isset($_GET["mode"]) ? $_GET["mode"] : null;
     $excludeDaysRaw = $_GET["exclude_days"] ?? "";
 
-    // Build cache options based on request parameters
-    $cacheOptions = [
-        "starting_year" => $startingYear,
-        "mode" => $mode,
-        "exclude_days" => $excludeDaysRaw,
-    ];
+    // Fetch data from GitHub API
+    $contributionGraphs = getContributionGraphs($user, $startingYear);
+    $contributions = getContributionDates($contributionGraphs);
 
-    // Check if cache is disabled
-    $useCache = !isset($_SERVER["DISABLE_CACHE"]) || strtolower($_SERVER["DISABLE_CACHE"]) !== "true";
-
-    // Check for cached stats first (24 hour cache) unless cache is disabled
-    $cachedStats = $useCache ? getCachedStats($user, $cacheOptions) : null;
-
-    if ($cachedStats !== null) {
-        // Use cached stats - instant response!
-        $stats = $cachedStats;
+    if ($mode === "weekly") {
+        $stats = getWeeklyContributionStats($contributions);
     } else {
-        // Fetch fresh data from GitHub API
-        $contributionGraphs = getContributionGraphs($user, $startingYear);
-        $contributions = getContributionDates($contributionGraphs);
-
-        if ($mode === "weekly") {
-            $stats = getWeeklyContributionStats($contributions);
-        } else {
-            // split and normalize excluded days
-            $excludeDays = normalizeDays(explode(",", $excludeDaysRaw));
-            $stats = getContributionStats($contributions, $excludeDays);
-        }
-
-        // Cache the stats for 24 hours unless cache is disabled
-        if ($useCache) {
-            setCachedStats($user, $cacheOptions, $stats);
-        }
+        // split and normalize excluded days
+        $excludeDays = normalizeDays(explode(",", $excludeDaysRaw));
+        $stats = getContributionStats($contributions, $excludeDays);
     }
 
     renderOutput($stats);

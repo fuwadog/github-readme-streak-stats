@@ -22,14 +22,14 @@
 2. Replace the value after `?user=` with your GitHub username
 
 ```md
-[![GitHub Streak](https://streak-stats.demolab.com/?user=DenverCoder1)](https://git.io/streak-stats)
+[![GitHub Streak](https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1)](https://git.io/streak-stats)
 ```
 
 3. Star the repo 😄
 
 ### Next Steps
 
-- Check out the [Demo Site](https://streak-stats.demolab.com) or [Options](https://github.com/DenverCoder1/github-readme-streak-stats?tab=readme-ov-file#-options) below for available customizations.
+- Check out the [Demo Site](https://github-readme-streak-stats-black-phi.vercel.app) or [Options](https://github.com/DenverCoder1/github-readme-streak-stats?tab=readme-ov-file#-options) below for available customizations.
 
 - It is recommended to self-host the project more better reliability. See [Deploying it on your own](https://github.com/DenverCoder1/github-readme-streak-stats?tab=readme-ov-file#-deploying-it-on-your-own) for more details.
 
@@ -39,9 +39,9 @@
 
 Here you can customize your Streak Stats card with a live preview.
 
-<https://streak-stats.demolab.com>
+<https://github-readme-streak-stats-black-phi.vercel.app>
 
-[![Demo Site](https://user-images.githubusercontent.com/20955511/114579753-dbac8780-9c86-11eb-97dd-207039f67d20.gif "Demo Site")](http://streak-stats.demolab.com/demo/)
+[![Demo Site](https://user-images.githubusercontent.com/20955511/114579753-dbac8780-9c86-11eb-97dd-207039f67d20.gif "Demo Site")](https://github-readme-streak-stats-black-phi.vercel.app/demo/)
 
 ## 🔧 Options
 
@@ -85,7 +85,7 @@ If the `theme` parameter is specified, any color customizations specified will b
 To enable a theme, append `&theme=` followed by the theme name to the end of the source URL:
 
 ```md
-[![GitHub Streak](https://streak-stats.demolab.com/?user=DenverCoder1&theme=dark)](https://git.io/streak-stats)
+[![GitHub Streak](https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1&theme=dark)](https://git.io/streak-stats)
 ```
 
 |     Theme      |                            Preview                            |
@@ -132,7 +132,7 @@ When the contribution year is equal to the current year, the characters in brack
 ### Example
 
 ```md
-[![GitHub Streak](https://streak-stats.demolab.com/?user=denvercoder1&currStreakNum=2FD3EB&fire=pink&sideLabels=F00&date_format=[Y.]n.j)](https://git.io/streak-stats)
+[![GitHub Streak](https://github-readme-streak-stats-black-phi.vercel.app/?user=denvercoder1&currStreakNum=2FD3EB&fire=pink&sideLabels=F00&date_format=[Y.]n.j)](https://git.io/streak-stats)
 ```
 
 ## ℹ️ How these stats are calculated

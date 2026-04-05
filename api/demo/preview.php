@@ -5,6 +5,10 @@ declare(strict_types=1);
 require_once dirname(__DIR__, 1) . "/card.php";
 require_once dirname(__DIR__, 1) . "/stats.php";
 
+header("X-Content-Type-Options: nosniff");
+header("X-Frame-Options: DENY");
+header("Referrer-Policy: strict-origin-when-cross-origin");
+
 $mode = $_GET["mode"] ?? "daily";
 
 // generate demo stats
@@ -45,7 +49,7 @@ header("Content-Type: image/svg+xml");
 
 try {
     renderOutput($demoStats);
-} catch (InvalidArgumentException | AssertionError $error) {
+} catch (InvalidArgumentException | RuntimeException $error) {
     error_log("Error {$error->getCode()}: {$error->getMessage()}");
     if ($error->getCode() >= 500) {
         error_log($error->getTraceAsString());

@@ -3,18 +3,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . "/src/Output/SvgGenerator.php";
-require_once __DIR__ . "/src/Util/DateFormatter.php";
 
 use App\Output\SvgGenerator;
-use App\Util\DateFormatter;
 
 $GLOBALS['svgGenerator'] = new SvgGenerator();
-$GLOBALS['dateFormatter'] = new DateFormatter();
 
 function formatDate(string $dateString, string|null $format, string $locale): string
 {
-    global $dateFormatter;
-    return $dateFormatter->formatDate($dateString, $format, $locale);
+    global $svgGenerator;
+    return $svgGenerator->formatDate($dateString, $format, $locale);
 }
 
 function translateDays(array $days, string $locale): array
@@ -43,16 +40,23 @@ function getRequestedTheme(array $params): array
 
 function utf8WordWrap(string $string, int $width = 75, string $break = "\n", bool $cut_long_words = false): string
 {
-    $string = preg_replace("/(.{1,$width})(?:\s|$)/uS", "$1$break", $string);
-    if ($cut_long_words) {
-        $string = preg_replace("/(\S{" . $width . "})(?=\S)/u", "$1$break", $string);
+    $result = preg_replace("/(.{1,$width})(?:\s|$)/uS", "$1$break", $string);
+    if ($result === null) {
+        return $string;
     }
-    return rtrim($string, $break);
+    if ($cut_long_words) {
+        $result = preg_replace("/(\S{" . $width . "})(?=\S)/u", "$1$break", $result);
+        if ($result === null) {
+            return $string;
+        }
+    }
+    return rtrim($result, $break);
 }
 
 function utf8Strlen(string $string): int
 {
-    return preg_match_all("/./us", $string, $matches);
+    $count = preg_match_all("/./us", $string, $matches);
+    return $count !== false ? $count : 0;
 }
 
 function splitLines(string $text, int $maxChars, int $line1Offset): string
@@ -64,12 +68,13 @@ function splitLines(string $text, int $maxChars, int $line1Offset): string
             $text = utf8WordWrap($text, $maxChars, "\n", true);
         }
     }
-    $text = htmlspecialchars($text);
-    return preg_replace(
+    $text = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    $split = preg_replace(
         "/^(.*)\n(.*)/",
         "<tspan x='0' dy='{$line1Offset}'>$1</tspan><tspan x='0' dy='16'>$2</tspan>",
         $text,
     );
+    return $split !== null ? $split : $text;
 }
 
 function normalizeLocaleCode(string $localeCode): string

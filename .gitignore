@@ -12,8 +12,10 @@ DOCKER_ENV
 docker_tag
 
 # Generated/Downloaded
-api/cacert.pem
 *.pem
+
+# Exception: cacert.pem is needed for SSL verification
+!api/cacert.pem
 
 # IDE
 .vscode/
@@ -46,3 +48,4 @@ api/test_*.php
 
 # Lock files (use composer.lock for production deps)
 yarn.lock
+example.txt

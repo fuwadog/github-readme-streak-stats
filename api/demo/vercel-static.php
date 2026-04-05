@@ -6,8 +6,21 @@
 
 // Remove the "/demo" from the URI and the query string
 $path = str_replace("/demo", "", strtok($_SERVER["REQUEST_URI"], "?"));
-// Get the file extension
-$extension = pathinfo($path, PATHINFO_EXTENSION);
+
+// Security: Resolve the real path and ensure it stays within the demo directory
+$resolvedPath = realpath(__DIR__ . $path);
+$demoDir = realpath(__DIR__);
+if ($resolvedPath === false || strpos($resolvedPath, $demoDir) !== 0) {
+    http_response_code(404);
+    exit("Not found");
+}
+
+// Only serve static files, not PHP files (except preview.php)
+$extension = pathinfo($resolvedPath, PATHINFO_EXTENSION);
+if ($extension === "php" && basename($resolvedPath) !== "preview.php") {
+    http_response_code(403);
+    exit("Forbidden");
+}
 
 // Set the content type based on the file extension
 switch ($extension) {
@@ -23,9 +36,13 @@ switch ($extension) {
     case "png":
         header("Content-Type: image/png");
         break;
+    case "php":
+        // For PHP files, include them (preview.php)
+        include $resolvedPath;
+        exit;
     default:
         break;
 }
 
 // Return the contents of the file
-require __DIR__ . $path;
+readfile($resolvedPath);

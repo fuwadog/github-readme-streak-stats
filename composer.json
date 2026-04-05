@@ -12,24 +12,19 @@
   "license": "MIT",
   "version": "1.6.0",
   "homepage": "https://github.com/DenverCoder1/github-readme-streak-stats",
-  "repositories": [
-      {
-          "type": "vcs",
-          "url": "https://github.com/DenverCoder1/github-readme-streak-stats"
-      }
-  ],
   "support": {
     "issues": "https://github.com/DenverCoder1/github-readme-streak-stats/issues",
     "source": "https://github.com/DenverCoder1/github-readme-streak-stats"
   },
   "autoload": {
     "classmap": [
-      "src/"
+      "api/"
     ]
   },
   "require": {
     "php": "^8.2",
     "ext-intl": "*",
+    "ext-curl": "*",
     "vlucas/phpdotenv": "^5.3"
   },
   "require-dev": {
@@ -38,7 +33,7 @@
   "scripts": {
     "start": [
       "Composer\\Config::disableProcessTimeout",
-      "php -S localhost:8000 -t src"
+      "php -S localhost:8000 -t api"
     ],
     "test": "./vendor/bin/phpunit --testdox tests",
     "lint": "npx prettier --check *.md **/*.{php,md,js,css}",

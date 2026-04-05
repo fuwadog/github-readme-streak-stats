@@ -5,7 +5,7 @@ declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 
 // load functions
-require_once "src/card.php";
+require_once "api/card.php";
 
 final class OptionsTest extends TestCase
 {
@@ -29,7 +29,7 @@ final class OptionsTest extends TestCase
     public function testThemes(): void
     {
         // check that getRequestedTheme returns correct colors for each theme
-        $themes = include "src/themes.php";
+        $themes = include "api/themes.php";
         foreach ($themes as $theme => $colors) {
             $actualColors = getRequestedTheme(["theme" => $theme]);
             $expectedColors = $colors;
@@ -49,7 +49,7 @@ final class OptionsTest extends TestCase
      */
     public function testThemesInDocumentation(): void
     {
-        $themes = include "src/themes.php";
+        $themes = include "api/themes.php";
         $docContent = file_get_contents("docs/themes.md");
         foreach (array_keys($themes) as $theme) {
             $this->assertStringContainsString(
@@ -81,7 +81,7 @@ final class OptionsTest extends TestCase
     public function testThemesHaveValidParameters(): void
     {
         // check that all themes contain all parameters and have valid values
-        $themes = include "src/themes.php";
+        $themes = include "api/themes.php";
         $hexPartialRegex = "(?:[A-F0-9]{3}|[A-F0-9]{4}|[A-F0-9]{6}|[A-F0-9]{8})";
         $hexRegex = "/^#{$hexPartialRegex}$/";
         $backgroundRegex = "/^#{$hexPartialRegex}|-?\d+(?:,{$hexPartialRegex})+$/";
@@ -261,7 +261,7 @@ final class OptionsTest extends TestCase
      */
     public function testAllThemeNamesNormalized(): void
     {
-        $themes = include "src/themes.php";
+        $themes = include "api/themes.php";
         foreach (array_keys($themes) as $theme) {
             $normalized = normalizeThemeName($theme);
             $this->assertEquals(

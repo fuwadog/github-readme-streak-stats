@@ -4,24 +4,23 @@ node_modules/
 *.log
 composer.phar
 yarn.lock
-package-lock.json
-.vercel
-
-# Cache directory
-cache/
 
 # Local Configuration
 .DS_Store
 
 # Environment
 .env
-.php-version
+.env.local
+.env.*.local
 DOCKER_ENV
 docker_tag
 
 # IDE
 .vscode/
 .idea/
+
+# Cache (no longer used)
+cache/
 
 # PHP local
 php-*/

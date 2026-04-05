@@ -18,20 +18,29 @@ class SvgGenerator
     {
         $date = new \DateTime($dateString);
         $formatted = "";
-        $patternGenerator = new \IntlDatePatternGenerator($locale);
+        try {
+            $patternGenerator = new \IntlDatePatternGenerator($locale);
+        } catch (\Throwable $e) {
+            $locale = "en";
+            $patternGenerator = new \IntlDatePatternGenerator($locale);
+        }
         if (date_format($date, "Y") == date("Y")) {
             if ($format) {
                 $cleanFormat = preg_replace("/\[.*?\]/", "", $format);
                 $formatted = date_format($date, $cleanFormat !== null ? $cleanFormat : $format);
             } else {
                 $pattern = $patternGenerator->getBestPattern("MMM d");
-                $dateFormatter = new \IntlDateFormatter(
-                    $locale,
-                    \IntlDateFormatter::MEDIUM,
-                    \IntlDateFormatter::NONE,
-                    pattern: $pattern,
-                );
-                $formatted = $dateFormatter->format($date);
+                try {
+                    $dateFormatter = new \IntlDateFormatter(
+                        $locale,
+                        \IntlDateFormatter::MEDIUM,
+                        \IntlDateFormatter::NONE,
+                        pattern: $pattern,
+                    );
+                    $formatted = $dateFormatter->format($date);
+                } catch (\Throwable $e) {
+                    $formatted = date_format($date, "M j");
+                }
             }
         }
         else {
@@ -39,16 +48,20 @@ class SvgGenerator
                 $formatted = date_format($date, str_replace(["[", "]"], "", $format));
             } else {
                 $pattern = $patternGenerator->getBestPattern("yyyy MMM d");
-                $dateFormatter = new \IntlDateFormatter(
-                    $locale,
-                    \IntlDateFormatter::MEDIUM,
-                    \IntlDateFormatter::NONE,
-                    pattern: $pattern,
-                );
-                $formatted = $dateFormatter->format($date);
+                try {
+                    $dateFormatter = new \IntlDateFormatter(
+                        $locale,
+                        \IntlDateFormatter::MEDIUM,
+                        \IntlDateFormatter::NONE,
+                        pattern: $pattern,
+                    );
+                    $formatted = $dateFormatter->format($date);
+                } catch (\Throwable $e) {
+                    $formatted = date_format($date, "Y M j");
+                }
             }
         }
-        return htmlspecialchars($formatted);
+        return htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8');
     }
 
     /**
@@ -63,14 +76,22 @@ class SvgGenerator
         if ($locale === "en") {
             return $days;
         }
-        $patternGenerator = new \IntlDatePatternGenerator($locale);
+        try {
+            $patternGenerator = new \IntlDatePatternGenerator($locale);
+        } catch (\Throwable $e) {
+            return $days;
+        }
         $pattern = $patternGenerator->getBestPattern("EEE");
-        $dateFormatter = new \IntlDateFormatter(
-            $locale,
-            \IntlDateFormatter::NONE,
-            \IntlDateFormatter::NONE,
-            pattern: $pattern,
-        );
+        try {
+            $dateFormatter = new \IntlDateFormatter(
+                $locale,
+                \IntlDateFormatter::NONE,
+                \IntlDateFormatter::NONE,
+                pattern: $pattern,
+            );
+        } catch (\Throwable $e) {
+            return $days;
+        }
         $translatedDays = [];
         foreach ($days as $day) {
             $translatedDays[] = $dateFormatter->format(new \DateTime($day));
@@ -213,7 +234,7 @@ class SvgGenerator
                 $text = $this->utf8WordWrap($text, $maxChars, "\n", true);
             }
         }
-        $text = htmlspecialchars($text);
+        $text = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
         $split = preg_replace(
             "/^(.*)\n(.*)/",
             "<tspan x='0' dy='{$line1Offset}'>$1</tspan><tspan x='0' dy='16'>$2</tspan>",

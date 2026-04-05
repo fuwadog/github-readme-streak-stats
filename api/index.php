@@ -8,6 +8,9 @@ require_once "card.php";
 
 define('API_ROOT', __DIR__);
 
+// Set UTC timezone for consistent date handling across all environments
+date_default_timezone_set('UTC');
+
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
 header("Referrer-Policy: strict-origin-when-cross-origin");
@@ -21,13 +24,21 @@ if (!isset($_ENV["TOKEN"])) {
 
 /**
  * Simple file-based rate limiter (100 requests per minute per IP)
+ * In serverless environments (Vercel), rate limiting is skipped because
+ * each invocation has an isolated filesystem that isn't shared.
  *
  * @return bool True if request is allowed, false if rate limited
  */
 function checkRateLimit(): bool
 {
+    // Serverless environments: skip file-based rate limiting
+    if (getenv("VERCEL") === "1" || getenv("AWS_LAMBDA_FUNCTION_NAME") !== false) {
+        return true;
+    }
+
+    // Use Cloudflare IP if available, otherwise fall back to REMOTE_ADDR
+    // X-Forwarded-For is intentionally excluded as it can be spoofed
     $ip = $_SERVER["HTTP_CF_CONNECTING_IP"]
-        ?? $_SERVER["HTTP_X_FORWARDED_FOR"]
         ?? $_SERVER["REMOTE_ADDR"]
         ?? "unknown";
     $ip = preg_replace("/[^0-9a-fA-F:.]/", "", $ip);
@@ -39,13 +50,15 @@ function checkRateLimit(): bool
 
     $requests = [];
     if (file_exists($rateFile)) {
-        $fp = fopen($rateFile, "r");
-        if (flock($fp, LOCK_SH)) {
-            $data = stream_get_contents($fp);
-            flock($fp, LOCK_UN);
-            $requests = is_string($data) ? json_decode($data, true) : [];
+        $fp = @fopen($rateFile, "r");
+        if ($fp !== false) {
+            if (flock($fp, LOCK_SH)) {
+                $data = stream_get_contents($fp);
+                flock($fp, LOCK_UN);
+                $requests = is_string($data) ? json_decode($data, true) : [];
+            }
+            fclose($fp);
         }
-        fclose($fp);
     }
     if (!is_array($requests)) {
         $requests = [];
@@ -59,15 +72,17 @@ function checkRateLimit(): bool
     }
 
     $requests[] = $now;
-    $fp = fopen($rateFile, "c");
-    if (flock($fp, LOCK_EX)) {
-        ftruncate($fp, 0);
-        rewind($fp);
-        fwrite($fp, json_encode($requests));
-        fflush($fp);
-        flock($fp, LOCK_UN);
+    $fp = @fopen($rateFile, "c");
+    if ($fp !== false) {
+        if (flock($fp, LOCK_EX)) {
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($requests));
+            fflush($fp);
+            flock($fp, LOCK_UN);
+        }
+        fclose($fp);
     }
-    fclose($fp);
     return true;
 }
 

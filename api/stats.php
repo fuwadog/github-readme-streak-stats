@@ -14,23 +14,6 @@ $GLOBALS['githubClient'] = new GitHubClient();
 $GLOBALS['streakCalculator'] = new StreakCalculator();
 $GLOBALS['whitelistService'] = new WhitelistService();
 
-function sanitizeForLogging(string $message): string
-{
-    $sanitized = $message;
-    if (isset($_ENV["TOKEN"])) {
-        $sanitized = str_replace($_ENV["TOKEN"], "[REDACTED]", $sanitized);
-    }
-    $index = 2;
-    while (isset($_ENV["TOKEN{$index}"])) {
-        $sanitized = str_replace($_ENV["TOKEN{$index}"], "[REDACTED]", $sanitized);
-        $index++;
-    }
-    if (strlen($sanitized) > 500) {
-        $sanitized = substr($sanitized, 0, 500) . "... [truncated]";
-    }
-    return $sanitized;
-}
-
 function buildContributionGraphQuery(string $user, int $year): string
 {
     global $githubClient;

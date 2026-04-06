@@ -32,8 +32,7 @@ class DateFormatter
                 );
                 $formatted = $dateFormatter->format($date);
             }
-        }
-        else {
+        } else {
             if ($format) {
                 $formatted = date_format($date, str_replace(["[", "]"], "", $format));
             } else {

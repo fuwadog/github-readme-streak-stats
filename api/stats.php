@@ -10,9 +10,9 @@ use App\Client\GitHubClient;
 use App\Service\StreakCalculator;
 use App\Service\WhitelistService;
 
-$GLOBALS['githubClient'] = new GitHubClient();
-$GLOBALS['streakCalculator'] = new StreakCalculator();
-$GLOBALS['whitelistService'] = new WhitelistService();
+$GLOBALS["githubClient"] = new GitHubClient();
+$GLOBALS["streakCalculator"] = new StreakCalculator();
+$GLOBALS["whitelistService"] = new WhitelistService();
 
 function buildContributionGraphQuery(string $user, int $year): string
 {

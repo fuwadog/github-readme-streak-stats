@@ -39,7 +39,7 @@ switch ($extension) {
     case "php":
         // For PHP files, include them (preview.php)
         include $resolvedPath;
-        exit;
+        exit();
     default:
         break;
 }

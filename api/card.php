@@ -6,7 +6,7 @@ require_once __DIR__ . "/src/Output/SvgGenerator.php";
 
 use App\Output\SvgGenerator;
 
-$GLOBALS['svgGenerator'] = new SvgGenerator();
+$GLOBALS["svgGenerator"] = new SvgGenerator();
 
 function formatDate(string $dateString, string|null $format, string $locale): string
 {
@@ -68,7 +68,7 @@ function splitLines(string $text, int $maxChars, int $line1Offset): string
             $text = utf8WordWrap($text, $maxChars, "\n", true);
         }
     }
-    $text = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    $text = htmlspecialchars($text, ENT_QUOTES, "UTF-8");
     $split = preg_replace(
         "/^(.*)\n(.*)/",
         "<tspan x='0' dy='{$line1Offset}'>$1</tspan><tspan x='0' dy='16'>$2</tspan>",

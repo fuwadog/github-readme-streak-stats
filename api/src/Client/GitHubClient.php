@@ -92,20 +92,22 @@ class GitHubClient
             $curlErrno = curl_errno($handle);
             $httpCode = curl_getinfo($handle, CURLINFO_HTTP_CODE);
             if ($contents === false || $contents === "") {
-                error_log("cURL failed for $user's $year contributions: errno=$curlErrno, error=$curlError, httpCode=$httpCode");
+                error_log(
+                    "cURL failed for $user's $year contributions: errno=$curlErrno, error=$curlError, httpCode=$httpCode",
+                );
                 $contents = "";
             }
             $decoded = is_string($contents) && $contents !== "" ? json_decode($contents) : null;
             if (!is_object($decoded) || empty($decoded->data) || !empty($decoded->errors)) {
-                $message = is_object($decoded) ? ($decoded->errors[0]->message ?? ($decoded->message ?? "An API error occurred.")) : "An API error occurred.";
-                $error_type = is_object($decoded) ? ($decoded->errors[0]->type ?? "") : "";
+                $message = is_object($decoded)
+                    ? $decoded->errors[0]->message ?? ($decoded->message ?? "An API error occurred.")
+                    : "An API error occurred.";
+                $error_type = is_object($decoded) ? $decoded->errors[0]->type ?? "" : "";
                 if ($curlErrno === 60) {
                     throw new \RuntimeException("You don't have a valid SSL Certificate installed or XAMPP.", 500);
-                }
-                elseif ($curlErrno) {
+                } elseif ($curlErrno) {
                     throw new \RuntimeException("cURL error ($curlErrno): $curlError", 500);
-                }
-                elseif ($error_type === "NOT_FOUND") {
+                } elseif ($error_type === "NOT_FOUND") {
                     throw new \InvalidArgumentException("Could not find a user with that name.", 404);
                 }
                 if (str_contains($message, "rate limit exceeded")) {
@@ -122,12 +124,16 @@ class GitHubClient
                 $retryCurlErrno = curl_errno($request);
                 $retryHttpCode = curl_getinfo($request, CURLINFO_HTTP_CODE);
                 if ($contents === false || $contents === "") {
-                    error_log("Retry cURL failed for $user's $year contributions: errno=$retryCurlErrno, error=$retryCurlError, httpCode=$retryHttpCode");
+                    error_log(
+                        "Retry cURL failed for $user's $year contributions: errno=$retryCurlErrno, error=$retryCurlError, httpCode=$retryHttpCode",
+                    );
                     $contents = "";
                 }
                 $decoded = is_string($contents) && $contents !== "" ? json_decode($contents) : null;
                 if (!is_object($decoded) || empty($decoded->data)) {
-                    $message = is_object($decoded) ? ($decoded->errors[0]->message ?? ($decoded->message ?? "An API error occurred.")) : "An API error occurred.";
+                    $message = is_object($decoded)
+                        ? $decoded->errors[0]->message ?? ($decoded->message ?? "An API error occurred.")
+                        : "An API error occurred.";
                     if (str_contains($message, "rate limit exceeded")) {
                         $this->removeGitHubToken($token);
                     }
@@ -229,14 +235,14 @@ class GitHubClient
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         // Use bundled CA cert with fallback to system default
-        $caPath = __DIR__ . '/../../cacert.pem';
+        $caPath = __DIR__ . "/../../cacert.pem";
         if (file_exists($caPath)) {
             curl_setopt($ch, CURLOPT_CAINFO, $caPath);
         }
         curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
         curl_setopt($ch, CURLOPT_VERBOSE, true);
-        curl_setopt($ch, CURLOPT_STDERR, fopen('php://temp', 'w+'));
+        curl_setopt($ch, CURLOPT_STDERR, fopen("php://temp", "w+"));
         return $ch;
     }
 }

@@ -42,8 +42,7 @@ class SvgGenerator
                     $formatted = date_format($date, "M j");
                 }
             }
-        }
-        else {
+        } else {
             if ($format) {
                 $formatted = date_format($date, str_replace(["[", "]"], "", $format));
             } else {
@@ -61,7 +60,7 @@ class SvgGenerator
                 }
             }
         }
-        return htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8');
+        return htmlspecialchars($formatted, ENT_QUOTES, "UTF-8");
     }
 
     /**
@@ -151,11 +150,9 @@ class SvgGenerator
                 $param = strtolower($params[$prop]);
                 if (preg_match("/^([a-f0-9]{3}|[a-f0-9]{4}|[a-f0-9]{6}|[a-f0-9]{8})$/", $param)) {
                     $theme[$prop] = "#" . $param;
-                }
-                elseif (in_array($param, $CSS_COLORS)) {
+                } elseif (in_array($param, $CSS_COLORS)) {
                     $theme[$prop] = $param;
-                }
-                elseif ($prop == "background" && preg_match("/^-?[0-9]+,[a-f0-9]{3,8}(,[a-f0-9]{3,8})+$/", $param)) {
+                } elseif ($prop == "background" && preg_match("/^-?[0-9]+,[a-f0-9]{3,8}(,[a-f0-9]{3,8})+$/", $param)) {
                     $theme[$prop] = $param;
                 }
             }
@@ -193,8 +190,12 @@ class SvgGenerator
      *              always wrapped at or before the specified width.
      * @return string The given string wrapped at the specified length
      */
-    public function utf8WordWrap(string $string, int $width = 75, string $break = "\n", bool $cut_long_words = false): string
-    {
+    public function utf8WordWrap(
+        string $string,
+        int $width = 75,
+        string $break = "\n",
+        bool $cut_long_words = false,
+    ): string {
         $wrapped = preg_replace("/(.{1,$width})(?:\s|$)/uS", "$1$break", $string);
         $string = $wrapped !== null ? $wrapped : $string;
         if ($cut_long_words) {
@@ -229,12 +230,11 @@ class SvgGenerator
         if ($maxChars > 0 && $this->utf8Strlen($text) > $maxChars && strpos($text, "\n") === false) {
             if (strpos($text, " - ") !== false) {
                 $text = str_replace(" - ", "\n- ", $text);
-            }
-            else {
+            } else {
                 $text = $this->utf8WordWrap($text, $maxChars, "\n", true);
             }
         }
-        $text = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+        $text = htmlspecialchars($text, ENT_QUOTES, "UTF-8");
         $split = preg_replace(
             "/^(.*)\n(.*)/",
             "<tspan x='0' dy='{$line1Offset}'>$1</tspan><tspan x='0' dy='16'>$2</tspan>",
@@ -382,10 +382,18 @@ class SvgGenerator
         }
 
         $maxCharsPerLineLabels = $numColumns > 0 ? intval(floor($cardWidth / $numColumns / 7.5)) : 0;
-        $totalContributionsText = $this->splitLines($localeTranslations["Total Contributions"], $maxCharsPerLineLabels, -9);
+        $totalContributionsText = $this->splitLines(
+            $localeTranslations["Total Contributions"],
+            $maxCharsPerLineLabels,
+            -9,
+        );
         if ($stats["mode"] === "weekly") {
             $currentStreakText = $this->splitLines($localeTranslations["Week Streak"], $maxCharsPerLineLabels, -9);
-            $longestStreakText = $this->splitLines($localeTranslations["Longest Week Streak"], $maxCharsPerLineLabels, -9);
+            $longestStreakText = $this->splitLines(
+                $localeTranslations["Longest Week Streak"],
+                $maxCharsPerLineLabels,
+                -9,
+            );
         } else {
             $currentStreakText = $this->splitLines($localeTranslations["Current Streak"], $maxCharsPerLineLabels, -9);
             $longestStreakText = $this->splitLines($localeTranslations["Longest Streak"], $maxCharsPerLineLabels, -9);
@@ -752,7 +760,10 @@ class SvgGenerator
             ];
         }
 
-        $svg = gettype($output) === "string" ? $this->generateErrorCard($output, $params) : $this->generateCard($output, $params);
+        $svg =
+            gettype($output) === "string"
+                ? $this->generateErrorCard($output, $params)
+                : $this->generateCard($output, $params);
 
         $svg = $this->convertHexColors($svg);
 

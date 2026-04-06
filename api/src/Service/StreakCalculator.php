@@ -112,8 +112,7 @@ class StreakCalculator
                     $stats["longestStreak"]["end"] = $stats["currentStreak"]["end"];
                     $stats["longestStreak"]["length"] = $stats["currentStreak"]["length"];
                 }
-            }
-            elseif ($date != $today) {
+            } elseif ($date != $today) {
                 $stats["currentStreak"]["length"] = 0;
                 $stats["currentStreak"]["start"] = $today;
                 $stats["currentStreak"]["end"] = $today;
@@ -191,8 +190,7 @@ class StreakCalculator
                     $stats["longestStreak"]["end"] = $stats["currentStreak"]["end"];
                     $stats["longestStreak"]["length"] = $stats["currentStreak"]["length"];
                 }
-            }
-            elseif ($week != $thisWeek) {
+            } elseif ($week != $thisWeek) {
                 $stats["currentStreak"]["length"] = 0;
                 $stats["currentStreak"]["start"] = $thisWeek;
                 $stats["currentStreak"]["end"] = $thisWeek;

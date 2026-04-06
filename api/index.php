@@ -6,10 +6,10 @@ require_once dirname(__DIR__, 1) . "/vendor/autoload.php";
 require_once "stats.php";
 require_once "card.php";
 
-define('API_ROOT', __DIR__);
+define("API_ROOT", __DIR__);
 
 // Set UTC timezone for consistent date handling across all environments
-date_default_timezone_set('UTC');
+date_default_timezone_set("UTC");
 
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
@@ -38,9 +38,7 @@ function checkRateLimit(): bool
 
     // Use Cloudflare IP if available, otherwise fall back to REMOTE_ADDR
     // X-Forwarded-For is intentionally excluded as it can be spoofed
-    $ip = $_SERVER["HTTP_CF_CONNECTING_IP"]
-        ?? $_SERVER["REMOTE_ADDR"]
-        ?? "unknown";
+    $ip = $_SERVER["HTTP_CF_CONNECTING_IP"] ?? ($_SERVER["REMOTE_ADDR"] ?? "unknown");
     $ip = preg_replace("/[^0-9a-fA-F:.]/", "", $ip);
     $cacheDir = sys_get_temp_dir();
     $rateFile = $cacheDir . "/rate_limit_" . md5($ip);
@@ -157,7 +155,10 @@ try {
         throw new InvalidArgumentException("Invalid starting year. Must be between 2005 and current year.", 400);
     }
     if (!isValidExcludeDays($excludeDaysRaw)) {
-        throw new InvalidArgumentException("Invalid exclude_days. Must be comma-separated day names (e.g., Sun,Mon).", 400);
+        throw new InvalidArgumentException(
+            "Invalid exclude_days. Must be comma-separated day names (e.g., Sun,Mon).",
+            400,
+        );
     }
 
     // Fetch data from GitHub API
@@ -172,12 +173,19 @@ try {
         $stats = getContributionStats($contributions, $excludeDays);
     }
 
-    // set cache to refresh once per day (24 hours)
-    $cacheSeconds = 24 * 60 * 60;
-    if (!isset($_ENV["DISABLE_CACHE"]) || $_ENV["DISABLE_CACHE"] !== "true") {
-        header("Expires: " . gmdate("D, d M Y H:i:s", time() + $cacheSeconds) . " GMT");
-        header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
-        header("Cache-Control: public, max-age=$cacheSeconds");
+    // set cache TTL from environment variable
+    // Set CACHE_TTL or CACHE_TTL_DEFAULT in Vercel (value in seconds, e.g., 18000 = 5 hours)
+    // CACHE_TTL takes priority over CACHE_TTL_DEFAULT
+    $cacheSeconds = isset($_ENV["CACHE_TTL"]) ? (int) $_ENV["CACHE_TTL"] : null;
+    if ($cacheSeconds === null) {
+        $cacheSeconds = isset($_ENV["CACHE_TTL_DEFAULT"]) ? (int) $_ENV["CACHE_TTL_DEFAULT"] : null;
+    }
+    if ($cacheSeconds !== null && $cacheSeconds > 0) {
+        if (!isset($_ENV["DISABLE_CACHE"]) || $_ENV["DISABLE_CACHE"] !== "true") {
+            header("Expires: " . gmdate("D, d M Y H:i:s", time() + $cacheSeconds) . " GMT");
+            header("Last-Modified: " . gmdate("D, d M Y H:i:s") . " GMT");
+            header("Cache-Control: public, max-age=$cacheSeconds");
+        }
     }
 
     renderOutput($stats);

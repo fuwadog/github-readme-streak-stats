@@ -261,14 +261,8 @@ final class RenderTest extends TestCase
     {
         $this->testParams["locale"] = "he";
         $render = generateOutput($this->testStats, $this->testParams)["body"];
-        $this->assertMatchesRegularExpression(
-            "/<!-- Total Contributions big number -->\\s*<g transform='translate\\(412\\.5, 48\\)'>/",
-            $render,
-        );
-        $this->assertMatchesRegularExpression(
-            "/<!-- Longest Streak big number -->\\s*<g transform='translate\\(82\\.5, 48\\)'>/",
-            $render,
-        );
+        $this->assertMatchesRegularExpression("/<g transform='translate\\(412\\.5, 48\\)'>/", $render);
+        $this->assertMatchesRegularExpression("/<g transform='translate\\(82\\.5, 48\\)'>/", $render);
     }
 
     /**

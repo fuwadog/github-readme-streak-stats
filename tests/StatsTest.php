@@ -28,46 +28,52 @@ final class StatsTest extends TestCase
      */
     public function testValidUsername(): void
     {
-        $contributionGraphs = getContributionGraphs("DenverCoder1");
-        $contributions = getContributionDates($contributionGraphs);
-        $stats = getContributionStats($contributions);
-        // test total contributions
-        $this->assertIsInt($stats["totalContributions"]);
-        $this->assertGreaterThan(2300, $stats["totalContributions"]);
-        // test first contribution
-        $this->assertEquals("2016-08-10", $stats["firstContribution"]);
-        // test longest streak length
-        $this->assertIsInt($stats["longestStreak"]["length"]);
-        $this->assertGreaterThanOrEqual(98, $stats["longestStreak"]["length"]);
-        // test current streak length
-        $this->assertIsInt($stats["currentStreak"]["length"]);
-        $this->assertGreaterThanOrEqual(0, $stats["currentStreak"]["length"]);
-        // test longest streak start date are in form YYYY-MM-DD
-        $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["longestStreak"]["start"]);
-        // test longest streak end date are in form YYYY-MM-DD
-        $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["longestStreak"]["end"]);
-        // test current streak start date are in form YYYY-MM-DD
-        $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["currentStreak"]["start"]);
-        // test current streak end date are in form YYYY-MM-DD
-        $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["currentStreak"]["end"]);
-        // test current streak end date is today or yesterday
-        $this->assertContains($stats["currentStreak"]["end"], [
-            date("Y-m-d"),
-            date("Y-m-d", strtotime("yesterday")),
-            date("Y-m-d", strtotime("tomorrow")),
-        ]);
-        // test length of longest streak matches time between start and end dates
-        $longestStreakDelta = strtotime($stats["longestStreak"]["end"]) - strtotime($stats["longestStreak"]["start"]);
-        $this->assertEquals($longestStreakDelta / 60 / 60 / 24 + 1, $stats["longestStreak"]["length"]);
-        // if the current streak is 0, the start date should be the same as the end date
-        if ($stats["currentStreak"]["length"] == 0) {
-            $this->assertEquals($stats["currentStreak"]["start"], $stats["currentStreak"]["end"]);
-        }
-        // test length of current streak matches time between start and end dates
-        else {
-            $currentStreakDelta =
-                strtotime($stats["currentStreak"]["end"]) - strtotime($stats["currentStreak"]["start"]);
-            $this->assertEquals($currentStreakDelta / 60 / 60 / 24 + 1, $stats["currentStreak"]["length"]);
+        $_SERVER["WHITELIST"] = "DenverCoder1";
+        try {
+            $contributionGraphs = getContributionGraphs("DenverCoder1");
+            $contributions = getContributionDates($contributionGraphs);
+            $stats = getContributionStats($contributions);
+            // test total contributions
+            $this->assertIsInt($stats["totalContributions"]);
+            $this->assertGreaterThan(2300, $stats["totalContributions"]);
+            // test first contribution
+            $this->assertEquals("2016-08-10", $stats["firstContribution"]);
+            // test longest streak length
+            $this->assertIsInt($stats["longestStreak"]["length"]);
+            $this->assertGreaterThanOrEqual(98, $stats["longestStreak"]["length"]);
+            // test current streak length
+            $this->assertIsInt($stats["currentStreak"]["length"]);
+            $this->assertGreaterThanOrEqual(0, $stats["currentStreak"]["length"]);
+            // test longest streak start date are in form YYYY-MM-DD
+            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["longestStreak"]["start"]);
+            // test longest streak end date are in form YYYY-MM-DD
+            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["longestStreak"]["end"]);
+            // test current streak start date are in form YYYY-MM-DD
+            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["currentStreak"]["start"]);
+            // test current streak end date are in form YYYY-MM-DD
+            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["currentStreak"]["end"]);
+            // test current streak end date is today or yesterday
+            $this->assertContains($stats["currentStreak"]["end"], [
+                date("Y-m-d"),
+                date("Y-m-d", strtotime("yesterday")),
+                date("Y-m-d", strtotime("tomorrow")),
+            ]);
+            // test length of longest streak matches time between start and end dates
+            $longestStreakDelta =
+                strtotime($stats["longestStreak"]["end"]) - strtotime($stats["longestStreak"]["start"]);
+            $this->assertEquals($longestStreakDelta / 60 / 60 / 24 + 1, $stats["longestStreak"]["length"]);
+            // if the current streak is 0, the start date should be the same as the end date
+            if ($stats["currentStreak"]["length"] == 0) {
+                $this->assertEquals($stats["currentStreak"]["start"], $stats["currentStreak"]["end"]);
+            }
+            // test length of current streak matches time between start and end dates
+            else {
+                $currentStreakDelta =
+                    strtotime($stats["currentStreak"]["end"]) - strtotime($stats["currentStreak"]["start"]);
+                $this->assertEquals($currentStreakDelta / 60 / 60 / 24 + 1, $stats["currentStreak"]["length"]);
+            }
+        } finally {
+            unset($_SERVER["WHITELIST"]);
         }
     }
 
@@ -76,11 +82,16 @@ final class StatsTest extends TestCase
      */
     public function testOverrideStartingYear(): void
     {
-        $contributionGraphs = getContributionGraphs("DenverCoder1", 2019);
-        $contributions = getContributionDates($contributionGraphs);
-        $stats = getContributionStats($contributions);
-        // test first contribution
-        $this->assertEquals("2019-01-01", $stats["firstContribution"]);
+        $_SERVER["WHITELIST"] = "DenverCoder1";
+        try {
+            $contributionGraphs = getContributionGraphs("DenverCoder1", 2019);
+            $contributions = getContributionDates($contributionGraphs);
+            $stats = getContributionStats($contributions);
+            // test first contribution
+            $this->assertEquals("2019-01-01", $stats["firstContribution"]);
+        } finally {
+            unset($_SERVER["WHITELIST"]);
+        }
     }
 
     /**

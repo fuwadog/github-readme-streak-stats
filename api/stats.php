@@ -10,104 +10,123 @@ use App\Client\GitHubClient;
 use App\Service\StreakCalculator;
 use App\Service\WhitelistService;
 
-$GLOBALS["githubClient"] = new GitHubClient();
-$GLOBALS["streakCalculator"] = new StreakCalculator();
-$GLOBALS["whitelistService"] = new WhitelistService();
+// Dependencies are supplied at call sites; no request state is stored globally.
 
 function buildContributionGraphQuery(string $user, int $year): string
 {
-    global $githubClient;
-    return $githubClient->buildContributionGraphQuery($user, $year);
+    return (new GitHubClient())->buildContributionGraphQuery($user, $year);
 }
 
 function executeContributionGraphRequests(string $user, array $years): array
 {
-    global $githubClient;
-    return $githubClient->executeContributionGraphRequests($user, $years);
+    return (new GitHubClient())->executeContributionGraphRequests($user, $years);
 }
 
-function getContributionGraphs(string $user, ?int $startingYear = null): array
+function validateGitHubCredentials(?GitHubClient $githubClient = null): void
 {
-    global $githubClient, $whitelistService;
+    ($githubClient ?? new GitHubClient())->validateCredentials();
+}
+
+function getContributionGraphs(
+    string $user,
+    ?int $startingYear = null,
+    ?GitHubClient $githubClient = null,
+    ?WhitelistService $whitelistService = null,
+): array {
+    $whitelistService ??= new WhitelistService();
     if (!$whitelistService->isWhitelisted($user)) {
         throw new InvalidArgumentException("User not in whitelist.", 403);
     }
+    $githubClient ??= new GitHubClient();
+    $githubClient->validateCredentials();
 
-    $currentYear = intval(date("Y"));
-    $responses = executeContributionGraphRequests($user, [$currentYear]);
-    $userCreatedDateTimeString = $responses[$currentYear]->data->user->createdAt ?? null;
+    $currentYear = (int) date("Y");
+    if ($startingYear !== null && ($startingYear < 2005 || $startingYear > $currentYear)) {
+        throw new InvalidArgumentException("Invalid starting year. Must be between 2005 and current year.", 400);
+    }
+    $responses = $githubClient->executeContributionGraphRequests($user, [$currentYear]);
+    $currentResponse = $responses[$currentYear] ?? null;
+    $userCreatedDateTimeString = is_object($currentResponse)
+        ? $currentResponse?->data?->user?->createdAt ?? null
+        : null;
     if (empty($userCreatedDateTimeString)) {
         throw new \RuntimeException("Failed to retrieve contributions. This is likely a GitHub API issue.", 500);
     }
     $userCreatedYear = intval(explode("-", $userCreatedDateTimeString)[0]);
-    $minimumYear = $startingYear ?: $userCreatedYear;
+    $minimumYear = $startingYear ?? $userCreatedYear;
     $minimumYear = max($minimumYear, 2005);
-    $yearsToRequest = range($minimumYear, $currentYear - 1);
-    $contributionYears = $responses[$currentYear]->data->user->contributionsCollection->contributionYears ?? [];
+    $yearsToRequest = $minimumYear < $currentYear ? range($minimumYear, $currentYear - 1) : [];
+    $contributionYears = is_object($currentResponse)
+        ? $currentResponse?->data?->user?->contributionsCollection?->contributionYears ?? []
+        : [];
+    if (!is_array($contributionYears)) {
+        throw new \RuntimeException("GitHub returned invalid contribution years.", 502);
+    }
     $firstContributionYear = $contributionYears[count($contributionYears) - 1] ?? $userCreatedYear;
-    if ($firstContributionYear < 2005) {
+    if ($firstContributionYear < 2005 && count($yearsToRequest) < 99) {
         array_unshift($yearsToRequest, $firstContributionYear);
     }
-    $responses += executeContributionGraphRequests($user, $yearsToRequest);
+    if (count($yearsToRequest) > 99) {
+        throw new \InvalidArgumentException("Too many contribution years requested.", 400);
+    }
+    if ($yearsToRequest !== []) {
+        $historicalResponses = $githubClient->executeContributionGraphRequests($user, $yearsToRequest);
+        foreach ($yearsToRequest as $year) {
+            if (!array_key_exists($year, $historicalResponses)) {
+                throw new \RuntimeException("Failed to retrieve contributions for year $year.", 502);
+            }
+        }
+        $responses += $historicalResponses;
+    }
     return $responses;
 }
 
 function getGitHubTokens(): array
 {
-    global $githubClient;
-    return $githubClient->getGitHubTokens();
+    return (new GitHubClient())->getGitHubTokens();
 }
 
 function getGitHubToken(): string
 {
-    global $githubClient;
-    return $githubClient->getGitHubToken();
+    return (new GitHubClient())->getGitHubToken();
 }
 
 function removeGitHubToken(string $token): void
 {
-    global $githubClient;
-    $githubClient->removeGitHubToken($token);
+    (new GitHubClient())->removeGitHubToken($token);
 }
 
-function getGraphQLCurlHandle(string $query, string $token): CurlHandle
+function getGraphQLCurlHandle(string $query, string $token, array $variables = []): CurlHandle
 {
-    global $githubClient;
-    return $githubClient->getGraphQLCurlHandle($query, $token);
+    return (new GitHubClient())->getGraphQLCurlHandle($query, $token, $variables);
 }
 
 function getContributionDates(array $contributionGraphs): array
 {
-    global $streakCalculator;
-    return $streakCalculator->getContributionDates($contributionGraphs);
+    return (new StreakCalculator())->getContributionDates($contributionGraphs);
 }
 
 function normalizeDays(array $days): array
 {
-    global $streakCalculator;
-    return $streakCalculator->normalizeDays($days);
+    return (new StreakCalculator())->normalizeDays($days);
 }
 
 function isExcludedDay(string $date, array $excludedDays): bool
 {
-    global $streakCalculator;
-    return $streakCalculator->isExcludedDay($date, $excludedDays);
+    return (new StreakCalculator())->isExcludedDay($date, $excludedDays);
 }
 
 function getContributionStats(array $contributions, array $excludedDays = []): array
 {
-    global $streakCalculator;
-    return $streakCalculator->getContributionStats($contributions, $excludedDays);
+    return (new StreakCalculator())->getContributionStats($contributions, $excludedDays);
 }
 
 function getPreviousSunday(string $date): string
 {
-    global $streakCalculator;
-    return $streakCalculator->getPreviousSunday($date);
+    return (new StreakCalculator())->getPreviousSunday($date);
 }
 
 function getWeeklyContributionStats(array $contributions): array
 {
-    global $streakCalculator;
-    return $streakCalculator->getWeeklyContributionStats($contributions);
+    return (new StreakCalculator())->getWeeklyContributionStats($contributions);
 }

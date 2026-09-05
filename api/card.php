@@ -2,11 +2,35 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . "/src/Service/PngRendererClient.php";
 require_once __DIR__ . "/src/Output/SvgGenerator.php";
 
 use App\Output\SvgGenerator;
 
 $GLOBALS["svgGenerator"] = new SvgGenerator();
+
+function getCacheEnvironmentValue(string $key): ?string
+{
+    foreach ([isset($_SERVER[$key]) ? $_SERVER[$key] : null, isset($_ENV[$key]) ? $_ENV[$key] : null] as $value) {
+        if (is_string($value) && trim($value) !== "") {
+            return trim($value);
+        }
+    }
+    $value = getenv($key);
+    return is_string($value) && trim($value) !== "" ? trim($value) : null;
+}
+
+function isCacheDisabled(): bool
+{
+    return strtolower(getCacheEnvironmentValue("DISABLE_CACHE") ?? "") === "true";
+}
+
+function setNoStoreHeaders(): void
+{
+    header("Cache-Control: no-cache, no-store, must-revalidate");
+    header("Pragma: no-cache");
+    header("Expires: 0");
+}
 
 function formatDate(string $dateString, string|null $format, string $locale): string
 {
@@ -145,52 +169,33 @@ function convertSvgToPng(string $svg, int $cardWidth, int $cardHeight): string
 
 function generateOutput(string|array $output, ?array $params = null, int $errorCode = 200): array
 {
-    $params = $params ?? $_GET;
-    $requestedType = $params["type"] ?? "svg";
-
-    if ($requestedType === "json") {
-        $data = gettype($output) === "string" ? ["error" => $output, "code" => $errorCode] : $output;
-        return [
-            "contentType" => "application/json",
-            "body" => json_encode($data),
-        ];
-    }
-
-    $svg = gettype($output) === "string" ? generateErrorCard($output, $params) : generateCard($output, $params);
-    $svg = convertHexColors($svg);
-
-    if ($requestedType === "png") {
-        try {
-            $cardWidth = (int) preg_replace("/.*width=[\"'](\d+)px[\"'].*/", "$1", $svg);
-            $cardHeight = (int) preg_replace("/.*height=[\"'](\d+)px[\"'].*/", "$1", $svg);
-            $png = convertSvgToPng($svg, $cardWidth, $cardHeight);
-            return [
-                "contentType" => "image/png",
-                "body" => $png,
-            ];
-        } catch (Exception $e) {
-            return [
-                "contentType" => "image/svg+xml",
-                "status" => 500,
-                "body" => generateErrorCard($e->getMessage(), $params),
-            ];
-        }
-    }
-
-    if (isset($params["disable_animations"]) && $params["disable_animations"] == "true") {
-        $svg = removeAnimations($svg);
-    }
-
-    return [
-        "contentType" => "image/svg+xml",
-        "body" => $svg,
-    ];
+    global $svgGenerator;
+    return $svgGenerator->generateOutput($output, $params, $errorCode);
 }
 
-function renderOutput(string|array $output, int $responseCode = 200): void
-{
-    $response = generateOutput($output, null, $responseCode);
-    http_response_code($responseCode);
+function renderOutput(
+    string|array $output,
+    int $responseCode = 200,
+    ?array $params = null,
+    ?string $cacheControl = null,
+): void {
+    $response = generateOutput($output, $params, $responseCode);
+    $status = $response["status"] ?? $responseCode;
+    http_response_code($status);
     header("Content-Type: {$response["contentType"]}");
+    $hasCacheControl = false;
+    foreach (headers_list() as $responseHeader) {
+        if (stripos($responseHeader, "Cache-Control:") === 0) {
+            $hasCacheControl = true;
+            break;
+        }
+    }
+    if ($status >= 400) {
+        setNoStoreHeaders();
+    } elseif ($cacheControl !== null) {
+        header("Cache-Control: $cacheControl");
+    } elseif (!$hasCacheControl) {
+        header(isCacheDisabled() ? "Cache-Control: no-store" : "Cache-Control: public, max-age=86400");
+    }
     exit($response["body"]);
 }

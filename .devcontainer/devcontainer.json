@@ -1,6 +1,16 @@
 {
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
-  "onCreateCommand": "/workspaces/github-readme-streak-stats/.devcontainer/on-create.sh",
-  "postCreateCommand": "/workspaces/github-readme-streak-stats/.devcontainer/post-create.sh"}
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"name": "PHP 8.4 / Node.js 24 development",
+	"forwardPorts": [8000],
+	"portsAttributes": {
+		"8000": {
+			"label": "PHP development server",
+			"onAutoForward": "notify"
+		}
+	},
+	"onCreateCommand": "/workspaces/github-readme-streak-stats/.devcontainer/on-create.sh",
+	"postCreateCommand": "/workspaces/github-readme-streak-stats/.devcontainer/post-create.sh",
+	"remoteUser": "vscode"
+}

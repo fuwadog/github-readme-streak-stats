@@ -1,31 +1,148 @@
-name: PHPUnit CI
+name: PHP CI
 
 on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches:
-      - main
+    workflow_dispatch:
+    pull_request:
+    push:
+        branches:
+            - main
 
-env:
-  PHP_VERSION: 8.2
+permissions:
+    contents: read
 
 jobs:
-  build-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: php-actions/composer@v6
-        with:
-          php_extensions: intl
-          php_version: ${{ env.PHP_VERSION }}
-      - name: PHPUnit Tests
-        uses: php-actions/phpunit@v4
-        with:
-          php_extensions: intl
-          php_version: ${{ env.PHP_VERSION }}
-          bootstrap: vendor/autoload.php
-          configuration: tests/phpunit/phpunit.xml
-          args: --testdox
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    build-test:
+        name: PHP ${{ matrix.php-version }}
+        runs-on: ubuntu-24.04
+        strategy:
+            fail-fast: false
+            matrix:
+                php-version: ["8.2.29", "8.3.23", "8.4.10"]
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+            - name: Set up PHP
+              uses: shivammathur/setup-php@c482204203a2eb89366ad513842766b70efaaee8 # v2
+              with:
+                  php-version: ${{ matrix.php-version }}
+                  extensions: curl, intl, mbstring, dom, xml, xmlwriter
+                  coverage: pcov
+
+            - name: Verify PHP extensions
+              run: |
+                  php -m | grep -qx curl
+                  php -m | grep -qx intl
+                  php -m | grep -qx mbstring
+                  php -m | grep -qx dom
+                  php -m | grep -qx xml
+                  php -m | grep -qx xmlwriter
+
+            - name: Install Composer dependencies
+              run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+
+            - name: Validate and audit Composer dependencies
+              run: |
+                  composer validate --strict --no-check-publish
+                  composer audit --locked --no-interaction
+
+            - name: Set up Node.js
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+              with:
+                  node-version: 24.7.0
+                  cache: npm
+
+            - name: Install formatter dependencies
+              run: npm ci --ignore-scripts
+
+            - name: Audit npm dependencies
+              run: npm audit --audit-level=high
+
+            - name: Run deterministic regression tests
+              run: composer test
+
+            - name: Check formatting
+              run: composer lint
+
+            - name: Run static analysis
+              run: composer analyse
+
+            - name: Run coverage regression check
+              run: composer coverage
+
+            - name: Record coverage provenance
+              if: ${{ matrix.php-version == '8.4.10' }}
+              run: |
+                  {
+                      printf 'repository=%s\n' "$GITHUB_REPOSITORY"
+                      printf 'commit=%s\n' "$GITHUB_SHA"
+                      printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+                      sha256sum coverage.xml
+                  } > coverage.provenance
+
+            - name: Upload coverage report
+              if: ${{ matrix.php-version == '8.4.10' }}
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+              with:
+                  name: phpunit-coverage
+                  path: |
+                      coverage.xml
+                      coverage.provenance
+                  if-no-files-found: error
+
+    container-health:
+        name: Container bootstrap and health check
+        runs-on: ubuntu-24.04
+        permissions:
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+            - name: Lint GitHub Actions workflows
+              run: |
+                  set -euo pipefail
+                  docker run --rm --entrypoint /bin/sh \
+                      --volume "$GITHUB_WORKSPACE:/repo:ro" \
+                      docker.io/rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 \
+                      -c 'actionlint /repo/.github/workflows/*.yml'
+
+            - name: Build non-deployed verification target
+              run: docker build --pull --target verification --tag streak-stats-verification .
+
+            - name: Scan verification image with Docker Scout
+              run: docker scout cves --only-severity critical,high --exit-code local://streak-stats-verification
+
+            - name: Run renderer unit tests
+              run: docker compose --profile test run --rm renderer-tests
+
+            - name: Build renderer image
+              run: docker build --pull --file renderer/Dockerfile --target production --tag streak-stats-renderer .
+
+            - name: Scan renderer image with Docker Scout
+              run: docker scout cves --only-severity critical,high --exit-code local://streak-stats-renderer
+
+            - name: Build and health-check production container
+              run: |
+                  set -euo pipefail
+                  docker build --pull --tag streak-stats-ci .
+                  docker run --detach --name streak-stats-ci --publish 8080:80 streak-stats-ci
+                  trap 'docker rm --force streak-stats-ci >/dev/null 2>&1 || true' EXIT
+                  for attempt in $(seq 1 30); do
+                      : "$attempt"
+                      health="$(docker inspect --format '{{.State.Health.Status}}' streak-stats-ci)"
+                      if [ "$health" = healthy ]; then
+                          curl --fail --silent --show-error http://127.0.0.1:8080/demo/ >/dev/null
+                          exit 0
+                      fi
+                      if [ "$health" = unhealthy ] || [ "$(docker inspect --format '{{.State.Status}}' streak-stats-ci)" = exited ]; then
+                          docker logs streak-stats-ci
+                          exit 1
+                      fi
+                      sleep 2
+                  done
+                  docker logs streak-stats-ci
+                  exit 1
+
+            - name: Scan production image with Docker Scout
+              run: docker scout cves --only-severity critical,high --exit-code local://streak-stats-ci

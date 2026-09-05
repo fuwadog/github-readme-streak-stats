@@ -10,7 +10,8 @@ $path = str_replace("/demo", "", strtok($_SERVER["REQUEST_URI"], "?"));
 // Security: Resolve the real path and ensure it stays within the demo directory
 $resolvedPath = realpath(__DIR__ . $path);
 $demoDir = realpath(__DIR__);
-if ($resolvedPath === false || strpos($resolvedPath, $demoDir) !== 0) {
+$demoPrefix = rtrim($demoDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+if ($resolvedPath === false || strncmp($resolvedPath, $demoPrefix, strlen($demoPrefix)) !== 0) {
     http_response_code(404);
     exit("Not found");
 }
@@ -36,11 +37,15 @@ switch ($extension) {
     case "png":
         header("Content-Type: image/png");
         break;
+    case "json":
+        header("Content-Type: application/json");
+        break;
     case "php":
         // For PHP files, include them (preview.php)
         include $resolvedPath;
         exit();
     default:
+        header("Content-Type: application/octet-stream");
         break;
 }
 

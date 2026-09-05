@@ -22,13 +22,21 @@ You can refer to the following articles on the basics of Git and GitHub in case 
 
 - [PHP 8.2+](https://www.apachefriends.org/index.html)
 - [Composer](https://getcomposer.org)
-- [Inkscape](https://inkscape.org) (for PNG rendering)
+- PHP `curl` and `intl` extensions (required by the application)
+- PHP `mbstring`, `dom`, `xml`, and `xmlwriter` extensions (required by PHPUnit)
+- [Inkscape](https://inkscape.org) (required for the legacy local PNG fallback)
+- Node.js 24.x (formatter, verification, and isolated renderer sidecar tooling)
+
+The `composer coverage` command additionally needs a coverage driver such as PCOV or Xdebug; CI provides PCOV.
 
 #### Linux
 
 ```bash
 sudo apt-get install php
 sudo apt-get install php-curl
+sudo apt-get install php-intl
+sudo apt-get install php-mbstring
+sudo apt-get install php-xml
 sudo apt-get install composer
 sudo apt-get install inkscape
 ```
@@ -37,9 +45,22 @@ sudo apt-get install inkscape
 
 Install PHP from [XAMPP](https://www.apachefriends.org/index.html) or [php.net](https://windows.php.net/download)
 
+Enable the `curl`, `intl`, `mbstring`, `dom`, `xml`, and `xmlwriter` extensions in `php.ini`. Install [Inkscape](https://inkscape.org) as well if you need PNG rendering.
+
 [▶ How to install and run PHP using XAMPP (Windows)](https://www.youtube.com/watch?v=K-qXW9ymeYQ)
 
 [📥 Download Composer](https://getcomposer.org/download/)
+
+If your local PHP installation cannot provide the PHPUnit extensions, use the repository's [dev container](.devcontainer/) instead. It installs the required PHP extensions, Composer, and Node.js, then bootstraps the dependencies. The container supports `composer test`; use CI or add PCOV/Xdebug for `composer coverage`. After installation, `composer check-platform-reqs` verifies the available platform requirements.
+
+Node.js 24.x is not the application runtime. Vercel continues to execute the existing PHP functions; Node is used only by verification and renderer tooling. PNG rendering is sidecar-first: use the isolated renderer over its private Unix socket with a read-only filesystem, no public listener or network egress, no GitHub credentials, and resource/time limits. The direct Inkscape invocation in the PHP process is an explicit legacy local fallback for self-hosted installations; use it only when the sidecar is unavailable and accept its larger process-isolation risk.
+
+Run the checks from the sidecar host or image before cutover:
+
+```bash
+test "$(node --version)" = "v24.7.0"
+inkscape --version | grep -q '^Inkscape '
+```
 
 ### Clone the repository
 
@@ -59,6 +80,8 @@ To get the GitHub API to run locally you will need to provide a token.
 ```php
 TOKEN=<your-token>
 ```
+
+Never place a token in a command argument, URL, test fixture, or log. Use `.env`, which is ignored, or a secret store. If `WHITELIST` is configured, use the exact approved GitHub usernames; collaborator status is not a substitute for this API allowlist.
 
 ### Install dependencies
 
@@ -111,13 +134,19 @@ Below you will find the process and workflow used to review and merge your chang
 ### Step 1 : Fork the Project
 
 - Fork this repository. This will create a copy of this repository on your GitHub profile.
-  Keep a reference to the original project in the `upstream` remote.
+  Keep the repository as a GitHub fork in the existing fork network and keep a reference to the original project in the `upstream` remote. Do not recreate it as an unrelated repository, since the deployment metadata and pull-request relationship depend on that network.
 
 ```bash
 git clone https://github.com/<your-username>/github-readme-streak-stats.git
 cd github-readme-streak-stats
 git remote add upstream https://github.com/DenverCoder1/github-readme-streak-stats.git
 ```
+
+For deployments, preserve the existing metadata while syncing the fork: the Vercel production branch is `vercel`, the repository root is the project root, and the `vercel.json` routes must remain unchanged. Keep production tokens in the hosting provider's secret store; do not add them to Git, issue reports, or commands.
+
+In Vercel, use encrypted Environment Variables for `TOKEN`, `TOKEN2`-style failover values, and the explicit `WHITELIST`. Protect preview deployments with Vercel Authentication or password protection. This deployment access control is separate from `WHITELIST` (which controls requested GitHub usernames) and from GitHub collaborator permissions (which control repository actions); changing one must not be treated as changing either of the others.
+
+Before a production cutover, run the sidecar health checks and compare fixed, sanitized requests against the canonical deployment and the candidate: status code, content type, SVG structure, and PNG bytes when PNG is supported. Exercise the demo separately with no token and confirm it uses fixture data. A differential mismatch blocks cutover until explained; do not print tokens or full request URLs in the comparison output.
 
 ![fork button](https://user-images.githubusercontent.com/63443481/136185816-0b6770d7-0b00-4951-861a-dd15e3954918.PNG)
 

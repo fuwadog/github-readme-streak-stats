@@ -1,0 +1,97 @@
+services:
+    web:
+        build:
+            context: .
+            target: production
+        ports:
+            - "8080:80"
+        environment:
+            TOKEN: "${TOKEN:-}"
+            TOKEN2: "${TOKEN2:-}"
+            WHITELIST: "${WHITELIST:-}"
+            DISABLE_CACHE: "${DISABLE_CACHE:-false}"
+            CACHE_TTL: "${CACHE_TTL:-}"
+            CACHE_TTL_DEFAULT: "${CACHE_TTL_DEFAULT:-86400}"
+            PNG_RENDERER_SOCKET: /run/streak-renderer/renderer.sock
+        volumes:
+            - renderer-socket:/run/streak-renderer:ro
+        group_add:
+            - "10001"
+        depends_on:
+            renderer:
+                condition: service_healthy
+        restart: unless-stopped
+
+    renderer:
+        build:
+            context: .
+            dockerfile: renderer/Dockerfile
+            target: production
+        user: "10001:10001"
+        read_only: true
+        network_mode: none
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        cpus: "0.50"
+        mem_limit: 256m
+        pids_limit: 64
+        tmpfs:
+            - /tmp:size=64m,mode=1777,nosuid,nodev,noexec
+            - /run:size=8m,mode=755,nosuid,nodev
+        volumes:
+            - renderer-socket:/run/streak-renderer:rw
+        environment:
+            RENDERER_SOCKET: /run/streak-renderer/renderer.sock
+            RENDERER_TMPDIR: /tmp/renderer
+        command:
+            - python3
+            - /app/server.py
+        healthcheck:
+            test:
+                [
+                    "CMD",
+                    "python3",
+                    "-c",
+                    "import json,socket; p='/run/streak-renderer/renderer.sock'; s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.settimeout(2); s.connect(p); s.sendall(b'GET /health HTTP/1.1\\r\\nHost: renderer\\r\\nConnection: close\\r\\n\\r\\n'); response=b''.join(iter(lambda:s.recv(4096),b'')); s.close(); head,body=response.split(b'\\r\\n\\r\\n',1); raise SystemExit(0 if head.startswith(b'HTTP/1.1 200 ') and json.loads(body)=={'status':'ok'} else 1)",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 3
+            start_period: 5s
+
+    renderer-tests:
+        profiles:
+            - test
+        build:
+            context: .
+            dockerfile: renderer/Dockerfile
+            target: test
+        user: "10001:10001"
+        read_only: true
+        network_mode: none
+        cap_drop:
+            - ALL
+        security_opt:
+            - no-new-privileges:true
+        cpus: "0.50"
+        mem_limit: 256m
+        pids_limit: 64
+        tmpfs:
+            - /tmp:size=64m,mode=1777,nosuid,nodev,noexec
+            - /run:size=8m,mode=755,nosuid,nodev
+            - /run/renderer-tests:size=8m,mode=700,uid=10001,gid=10001,nosuid,nodev,exec
+        environment:
+            RENDERER_TEST_TMPDIR: /run/renderer-tests
+        command:
+            - python3
+            - /app/test_server.py
+
+volumes:
+    renderer-socket:
+        driver: local
+        driver_opts:
+            type: tmpfs
+            device: tmpfs
+            o: size=1m,uid=10001,gid=10001,mode=0770

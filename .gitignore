@@ -2,7 +2,6 @@
 vendor/
 node_modules/
 composer.phar
-package-lock.json
 
 # Environment
 .env
@@ -33,6 +32,7 @@ cache/
 .vercel/**
 !.vercel/project.json
 coverage/
+renderer/__pycache__/
 
 # PHP/PHPUnit
 php-*/

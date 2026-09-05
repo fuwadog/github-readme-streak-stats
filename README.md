@@ -49,36 +49,36 @@ The `user` field is the only required option. All other fields are optional.
 
 If the `theme` parameter is specified, any color customizations specified will be applied on top of the theme, overriding the theme's values.
 
-|         Parameter          |                     Details                      |                                              Example                                               |
-| :------------------------: | :----------------------------------------------: | :------------------------------------------------------------------------------------------------: |
-|           `user`           |        GitHub username to show stats for         |                                           `DenverCoder1`                                           |
-|          `theme`           |     The theme to apply (Default: `default`)      |                          `dark`, `radical`, etc. [🎨➜](./docs/themes.md)                           |
-|       `hide_border`        |  Make the border transparent (Default: `false`)  |                                         `true` or `false`                                          |
-|      `border_radius`       | Set the roundness of the edges (Default: `4.5`)  |                           Number `0` (sharp corners) to `248` (ellipse)                            |
-|        `background`        |  Background color (eg. `f2f2f2`, `35,d22,00f`)   | **hex code** without `#`, **css color**, or gradient in the form `angle,start_color,...,end_color` |
-|          `border`          |                   Border color                   |                             **hex code** without `#` or **css color**                              |
-|          `stroke`          |        Stroke line color between sections        |                             **hex code** without `#` or **css color**                              |
-|           `ring`           |   Color of the ring around the current streak    |                             **hex code** without `#` or **css color**                              |
-|           `fire`           |          Color of the fire in the ring           |                             **hex code** without `#` or **css color**                              |
-|      `currStreakNum`       |              Current streak number               |                             **hex code** without `#` or **css color**                              |
-|         `sideNums`         |         Total and longest streak numbers         |                             **hex code** without `#` or **css color**                              |
-|     `currStreakLabel`      |               Current streak label               |                             **hex code** without `#` or **css color**                              |
-|        `sideLabels`        |         Total and longest streak labels          |                             **hex code** without `#` or **css color**                              |
-|          `dates`           |              Date range text color               |                             **hex code** without `#` or **css color**                              |
-|     `excludeDaysLabel`     |       Excluded days of the week text color       |                             **hex code** without `#` or **css color**                              |
-|       `date_format`        |  Date format pattern or empty for locale format  |                        See note below on [📅 Date Formats](#-date-formats)                         |
-|          `locale`          |  Locale for labels and numbers (Default: `en`)   |                            ISO 639-1 code - See [🗪 Locales](#-locales)                             |
-|      `short_numbers`       |  Use short numbers (e.g. 1.5k instead of 1,500)  |                                         `true` or `false`                                          |
-|           `type`           |          Output format (Default: `svg`)          |                              Current options: `svg`, `png` or `json`                               |
-|           `mode`           |          Streak mode (Default: `daily`)          |             `daily` (contribute daily) or `weekly` (contribute once per Sun-Sat week)              |
-|       `exclude_days`       | List of days of the week to exclude from streaks |    Comma-separated list of day abbreviations (Sun, Mon, Tue, Wed, Thu, Fri, Sat) e.g. `Sun,Sat`    |
-|    `disable_animations`    |    Disable SVG animations (Default: `false`)     |                                         `true` or `false`                                          |
-|        `card_width`        |   Width of the card in pixels (Default: `495`)   |                        Positive integer, minimum width is 100px per column                         |
-|       `card_height`        |  Height of the card in pixels (Default: `195`)   |                             Positive integer, minimum height is 170px                              |
-| `hide_total_contributions` | Hide the total contributions (Default: `false`)  |                                         `true` or `false`                                          |
-|   `hide_current_streak`    |    Hide the current streak (Default: `false`)    |                                         `true` or `false`                                          |
-|   `hide_longest_streak`    |    Hide the longest streak (Default: `false`)    |                                         `true` or `false`                                          |
-|      `starting_year`       |          Starting year of contributions          |   Integer, must be `2005` or later, eg. `2017`. By default, your account creation year is used.    |
+|         Parameter          |                        Details                         |                                                  Example                                                  |
+| :------------------------: | :----------------------------------------------------: | :-------------------------------------------------------------------------------------------------------: |
+|           `user`           |           GitHub username to show stats for            |                                              `DenverCoder1`                                               |
+|          `theme`           |        The theme to apply (Default: `default`)         |                              `dark`, `radical`, etc. [🎨➜](./docs/themes.md)                              |
+|       `hide_border`        |     Make the border transparent (Default: `false`)     |                                             `true` or `false`                                             |
+|      `border_radius`       |    Set the roundness of the edges (Default: `4.5`)     |                                            Non-negative number                                            |
+|        `background`        |     Background color (eg. `f2f2f2`, `35,d22,00f`)      |    **hex code** without `#`, **css color**, or gradient in the form `angle,start_color,...,end_color`     |
+|          `border`          |                      Border color                      |                                 **hex code** without `#` or **css color**                                 |
+|          `stroke`          |           Stroke line color between sections           |                                 **hex code** without `#` or **css color**                                 |
+|           `ring`           |      Color of the ring around the current streak       |                                 **hex code** without `#` or **css color**                                 |
+|           `fire`           |             Color of the fire in the ring              |                                 **hex code** without `#` or **css color**                                 |
+|      `currStreakNum`       |                 Current streak number                  |                                 **hex code** without `#` or **css color**                                 |
+|         `sideNums`         |            Total and longest streak numbers            |                                 **hex code** without `#` or **css color**                                 |
+|     `currStreakLabel`      |                  Current streak label                  |                                 **hex code** without `#` or **css color**                                 |
+|        `sideLabels`        |            Total and longest streak labels             |                                 **hex code** without `#` or **css color**                                 |
+|          `dates`           |                 Date range text color                  |                                 **hex code** without `#` or **css color**                                 |
+|     `excludeDaysLabel`     |          Excluded days of the week text color          |                                 **hex code** without `#` or **css color**                                 |
+|       `date_format`        |     Date format pattern or empty for locale format     |                            See note below on [📅 Date Formats](#-date-formats)                            |
+|          `locale`          |     Locale for labels and numbers (Default: `en`)      |                         ISO language or locale code - See [🗪 Locales](#-locales)                          |
+|      `short_numbers`       |     Use short numbers (e.g. 1.5k instead of 1,500)     |                                             `true` or `false`                                             |
+|           `type`           |             Output format (Default: `svg`)             |                                  Current options: `svg`, `png` or `json`                                  |
+|           `mode`           |             Streak mode (Default: `daily`)             |                 `daily` (contribute daily) or `weekly` (contribute once per Sun-Sat week)                 |
+|       `exclude_days`       | List of days of the week to exclude from daily streaks |       Comma-separated list of day abbreviations (Sun, Mon, Tue, Wed, Thu, Fri, Sat) e.g. `Sun,Sat`        |
+|    `disable_animations`    |       Disable SVG animations (Default: `false`)        |                                             `true` or `false`                                             |
+|        `card_width`        |      Width of the card in pixels (Default: `495`)      |                            Positive integer, minimum width is 100px per column                            |
+|       `card_height`        |     Height of the card in pixels (Default: `195`)      |                                 Positive integer, minimum height is 170px                                 |
+| `hide_total_contributions` |    Hide the total contributions (Default: `false`)     |                                             `true` or `false`                                             |
+|   `hide_current_streak`    |       Hide the current streak (Default: `false`)       |                                             `true` or `false`                                             |
+|   `hide_longest_streak`    |       Hide the longest streak (Default: `false`)       |                                             `true` or `false`                                             |
+|      `starting_year`       |             Starting year of contributions             | Integer from `2005` through the current year, eg. `2017`. By default, your account creation year is used. |
 
 ### 🖌 Themes
 
@@ -158,14 +158,24 @@ Doing this can lead to better uptime and more control over customization (you ca
 
 You can deploy the PHP files on any website server with PHP installed including Heroku and Vercel.
 
-The Inkscape dependency is required for PNG rendering, as well as Segoe UI font for the intended rendering. If using Heroku, the buildpacks will install these for you automatically.
+Inkscape is required for PNG rendering. Segoe UI is preferred for the intended rendering, but the SVG uses fallback fonts when it is unavailable. If using Heroku, the buildpacks will install Inkscape for you automatically.
+
+#### Runtime and renderer policy
+
+Node.js 24.x is the target for the formatter, verification jobs, and any isolated renderer sidecar. It is tooling only: the application remains PHP, and changing the Node version does not change Vercel's PHP behavior. Vercel continues to route the PHP functions through the existing PHP runtime; do not replace that runtime or change the routes in `vercel.json`.
+
+For self-hosting PNG support, keep Inkscape in an isolated renderer process or sidecar where possible. The renderer must have a read-only filesystem, no public ingress, no GitHub token, bounded input size and execution time, and no network egress. Only the application should be public. The current Vercel deployment does not include Inkscape, so its supported public output remains SVG; PNG requests there are a documented limitation, not a reason to change the deployment identity or routes.
 
 ### [![Deploy to Vercel](https://github.com/DenverCoder1/github-readme-streak-stats/assets/20955511/5a503e6b-c462-4627-82ee-651f2cb2a1fc)][verceldeploy]
 
 Vercel is the recommended option for hosting the files since it is **free** and easy to set up. Watch the video below or expand the instructions to learn how to deploy to Vercel.
 
+Use `https://github-readme-streak-stats-black-phi.vercel.app` as the canonical hosted demo and embed URL. The `https://streak-stats.demolab.com` hostname is retained as a legacy compatibility alias for existing embeds; use the canonical URL for new embeds.
+
 > [!NOTE]
 > PNG mode is not supported since Inkscape will not be installed but the default SVG mode will work.
+
+Protect every Vercel preview and preview deployment URL with Vercel Authentication or password protection. Preview URLs are for authorized testing only and must never be used in public README embeds. Keep the canonical production URL above public and unchanged.
 
 ### 📺 [Click here for a video tutorial on how to self-host on Vercel](https://www.youtube.com/watch?v=maoXtlb8t44)
 
@@ -177,7 +187,7 @@ Vercel is the recommended option for hosting the files since it is **free** and 
 #### Option 1: Deploy to Vercel quickly with the Deploy button (recommended)
 
 > [!IMPORTANT]
-> Make sure that you host the **`vercel`** branch as otherwise you'll get a 404 error from Vercel. You can set the `vercel` branch as default after forking the repo.
+> Make sure that you host the **`vercel`** branch as otherwise you'll get a 404 error from Vercel. You can set the `vercel` branch as default after forking the repo. Keep the fork in the GitHub fork network for this repository rather than creating an unrelated copy.
 
 1. Click the Deploy button below
 
@@ -190,13 +200,14 @@ Vercel is the recommended option for hosting the files since it is **free** and 
 
 ![vercel environment variables](https://github.com/DenverCoder1/github-readme-streak-stats/assets/20955511/17a433d6-0aaa-4c69-9a53-6d4638318fbb)
 
-6. Click **"Deploy"** at the end of the form
-7. Once the app is deployed, click the screenshot of your app or continue to the dashboard to find your domain to use in place of `streak-stats.demolab.com`
+6. Add `WHITELIST` as an encrypted Environment Variable and enter the exact comma-separated list of GitHub usernames that the public deployment may serve.
+7. Click **"Deploy"** at the end of the form
+8. Once the app is deployed, click the screenshot of your app or continue to the dashboard to find your deployment domain to use in your README.
 
 ![deployment](https://github.com/DenverCoder1/github-readme-streak-stats/assets/20955511/32092461-5983-4fed-b21b-29be55ed85e8)
 
 > ⚠️ **Note**
-> If you receive an error related to libssl or Node 20.x, you can fix this by opening your Vercel project settings and changing the Node.js version to 18.x.
+> Node.js 24.x applies only to formatter, verification, and isolated renderer tooling. A libssl or PHP function error is not fixed by changing the Vercel PHP runtime; verify the existing PHP deployment and routes instead.
 >
 > ![image](https://github.com/DenverCoder1/github-readme-streak-stats/assets/20955511/5fb18fb5-debe-4620-9c8b-193ab442a617)
 
@@ -213,7 +224,7 @@ Vercel is the recommended option for hosting the files since it is **free** and 
 9. Scroll to the bottom of the page and click on **"Generate token"**
 10. Visit the Vercel dashboard at <https://vercel.com/dashboard> and select your project. Then, click on **"Settings"** and choose **"Environment Variables"**.
 11. Add a new environment variable with the key `TOKEN` and the value as the token you generated in step 9, then save your changes
-12. (Optional) You can also set the `WHITELIST` environment variable to restrict which GitHub usernames can be accessed through the service. Provide the usernames as a comma-separated list, for example: `user1,user2,user3`. If the variable is not set, information can be requested for any GitHub user.
+12. Set the `WHITELIST` environment variable to the exact comma-separated list of GitHub usernames that this public deployment may serve, for example: `DenverCoder1`. Missing, empty, wildcard, or malformed configuration denies every username.
 13. To apply the new environment variable(s), you need to redeploy the app. Run `vercel --prod` to deploy the app to production.
 
 ![image](https://user-images.githubusercontent.com/20955511/209588756-8bf5b0cd-9aa6-41e8-909c-97bf41e525b3.png)
@@ -221,8 +232,10 @@ Vercel is the recommended option for hosting the files since it is **free** and 
 > ⚠️ **Note**
 > To set up automatic Vercel deployments from GitHub, make sure to turn **off** "Include source files outside of the Root Directory" in the General settings and use `vercel` as the production branch in the Git settings.
 
+The production deployment configuration is protected by this contract: keep the production branch as `vercel`, keep the repository root as the project root, leave **"Include source files outside of the Root Directory"** disabled, and keep `TOKEN` and any `TOKEN2`-style variables in Vercel's encrypted Environment Variables only. Do not put token values in the repository, deployment URL, query string, process arguments, or build logs. Protect preview deployments with Vercel Authentication or password protection, separately from production. The routes in `vercel.json` are also part of the deployment contract: `/` serves `api/index.php`, `/demo/` serves the demo, and `/demo/<asset>` serves demo assets. Do not change the canonical deployment identity while applying these settings.
+
 > ⚠️ **Note**
-> If you receive an error related to libssl or Node 20.x, you can fix this by opening your Vercel project settings and changing the Node.js version to 18.x.
+> Node.js 24.x applies only to formatter, verification, and isolated renderer tooling. A libssl or PHP function error is not fixed by changing the Vercel PHP runtime; verify the existing PHP deployment and routes instead.
 >
 > ![image](https://github.com/DenverCoder1/github-readme-streak-stats/assets/20955511/5fb18fb5-debe-4620-9c8b-193ab442a617)
 
@@ -248,9 +261,9 @@ Heroku is another great option for hosting the files. All features are supported
 
 ![heroku config variables](https://user-images.githubusercontent.com/20955511/136292022-a8d9b3b5-d7d8-4a5e-a049-8d23b51ce9d7.png)
 
-6. (Optional) You can also set the `WHITELIST` Config Var to restrict which GitHub usernames can be accessed through the service. Provide the usernames as a comma-separated list, for example: `user1,user2,user3`. If the variable is not set, information can be requested for any GitHub user.
+6. Set the `WHITELIST` Config Var to the exact comma-separated list of GitHub usernames that this public deployment may serve, for example: `DenverCoder1`. Missing, empty, wildcard, or malformed configuration denies every username.
 7. Click **"Deploy App"** at the end of the form
-8. Once the app is deployed, you can use `<your-app-name>.herokuapp.com` in place of `streak-stats.demolab.com`
+8. Once the app is deployed, you can use `<your-app-name>.herokuapp.com` as the image host in your README.
 
 </details>
 
@@ -284,22 +297,54 @@ Docker is a great option for self-hosting with full control over your environmen
    docker build -t streak-stats .
    ```
 
-5. Run the container with your GitHub token:
+5. Copy `.env.example` to `.env`, enter the token with a local editor, and keep `.env` untracked. Run the container using the env file so the token is not exposed in shell history or process arguments:
 
    ```bash
-   docker run -d -p 8080:80 -e TOKEN=your_github_token_here streak-stats
+   docker run -d -p 8080:80 --env-file .env streak-stats
    ```
 
-6. You can also optionally set the `WHITELIST` environment variable to restrict which GitHub usernames can be accessed through the service. If the `WHITELIST` variable is not set, information can be requested for any GitHub user.
-   Provide the usernames as a comma-separated list, for example:
+6. Set `WHITELIST` in `.env` to a comma-separated list of GitHub usernames. Missing, empty, wildcard, or malformed configuration denies every username.
 
    ```bash
-   docker run -d -p 8080:80 -e TOKEN=your_github_token_here -e WHITELIST=user1,user2,user3 streak-stats
+   # Edit .env and set: WHITELIST=user1,user2,user3
+   docker run -d -p 8080:80 --env-file .env streak-stats
    ```
 
 7. Visit http://localhost:8080 to access your self-hosted instance
 
 </details>
+
+### 🔐 Public API security contract and operations
+
+The card endpoint is a public, anonymous `GET` API. The caller supplies a GitHub username and display options; the caller must never supply or receive the server's GitHub token. Tokens are server-side environment variables only, and a GitHub token with no additional scopes is sufficient for the documented contribution requests. Do not put a token in a URL, issue, screenshot, log, or command-line argument.
+
+- `WHITELIST` is the explicit comma-separated access list for the public deployment, matched case-insensitively. Set it to the exact GitHub usernames that are approved, for example `DenverCoder1`; missing, empty, wildcard, or malformed configuration denies every username, while other valid usernames return `403`. This list is independent of GitHub repository collaborator permissions.
+- Self-hosted deployments enforce a file-based limit of 100 requests per minute per client IP. Serverless deployments fail with a configuration error unless `EXTERNAL_RATE_LIMITER=true` explicitly indicates that an upstream limiter is active.
+- Successful cards are publicly cacheable. Set `CACHE_TTL` or `CACHE_TTL_DEFAULT` to a positive number of seconds; `CACHE_TTL` takes precedence. `DISABLE_CACHE=true` sends `no-store`, and error responses are always `no-store`. If no TTL is configured, the response fallback is one day.
+- `TOKEN` is the primary token. Add `TOKEN2`, `TOKEN3`, through `TOKEN100` as additional failover tokens. A token that is rate-limited is removed from the current process's pool and the request retries with another available token; if none remain, the service returns `429`. This is failover, not a replacement for rotating credentials.
+
+The demo is isolated from the public API: it uses fixture data, must not require `TOKEN`, must not contact GitHub, and must not be used to test production credentials. Keep demo assets under `/demo/` and verify that a demo request cannot reach the card endpoint or expose environment variables.
+
+#### Token rotation and secret-safe commands
+
+To rotate a token, add the replacement as the next `TOKENn` variable, redeploy, verify the deployment, then revoke the old token and remove its variable in a later deployment. This avoids an intentional outage and keeps the old credential out of new processes. In Vercel, use the dashboard or the interactive command below and paste the value only at its hidden prompt:
+
+```bash
+vercel env add TOKEN2 production
+vercel --prod
+```
+
+For local development, put the value in the ignored `.env` file or enter it without echoing it; never include it in a command argument:
+
+```bash
+read -rsp "GitHub PAT: " TOKEN && printf '\n' && export TOKEN
+composer start
+unset TOKEN
+```
+
+#### Dependency and CVE release gate
+
+Do not cut over or release with an unresolved critical or high CVE in application dependencies, the renderer, or a production image. Medium and low findings require a tracked exception naming the affected component, impact, mitigation, owner, and expiry no more than 30 days away; there are no indefinite waivers. Run the Composer, npm, and image audits again immediately before cutover. An unavailable or incomplete audit is a failed gate, not an approval.
 
 [hspace]: https://user-images.githubusercontent.com/20955511/136058102-b79570bc-4912-4369-b664-064a0ada8588.png
 [verceldeploy]: https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FDenverCoder1%2Fgithub-readme-streak-stats%2Ftree%2Fvercel&env=TOKEN&envDescription=GitHub%20Personal%20Access%20Token%20(no%20scopes%20required)&envLink=https%3A%2F%2Fgithub.com%2Fsettings%2Ftokens%2Fnew%3Fdescription%3DGitHub%2520Readme%2520Streak%2520Stats&project-name=streak-stats&repository-name=github-readme-streak-stats

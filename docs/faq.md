@@ -6,19 +6,21 @@ A profile readme appears on your profile page when you create a repository with 
 
 ## How do I include GitHub Readme Streak Stats in my Readme?
 
-Markdown files on GitHub support embedded images using Markdown or HTML. You can customize your Streak Stats image on the [demo site](https://streak-stats.demolab.com/demo/) and use the image source in either of the following ways:
+Markdown files on GitHub support embedded images using Markdown or HTML. The public canonical service is `https://github-readme-streak-stats-black-phi.vercel.app`; use its `/demo/` route to customize a card and use the image source in either of the following ways. Preview and deployment URLs protected by Vercel Authentication or password protection are not public embed hosts.
+
+The `https://streak-stats.demolab.com` hostname is retained as a legacy compatibility alias for existing embeds. Use `https://github-readme-streak-stats-black-phi.vercel.app` for new embeds.
 
 ### Markdown
 
 ```md
-[![GitHub Streak](https://streak-stats.demolab.com?user=DenverCoder1)](https://git.io/streak-stats)
+[![GitHub Streak](https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1)](https://git.io/streak-stats)
 ```
 
 ### HTML
 
 <!-- prettier-ignore-start -->
 ```html
-<a href="https://git.io/streak-stats"><img src="https://streak-stats.demolab.com?user=DenverCoder1"/></a>
+<a href="https://git.io/streak-stats"><img src="https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1"/></a>
 ```
 <!-- prettier-ignore-end -->
 
@@ -57,7 +59,7 @@ To center align images, you must use the HTML syntax and wrap it in an element w
 <!-- prettier-ignore-start -->
 ```html
 <p align="center">
-    <a href="https://git.io/streak-stats"><img src="https://streak-stats.demolab.com?user=DenverCoder1"/></a>
+    <a href="https://git.io/streak-stats"><img src="https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1"/></a>
 </p>
 ```
 <!-- prettier-ignore-end -->
@@ -69,8 +71,8 @@ You can [specify theme context](https://github.blog/changelog/2022-05-19-specify
 <!-- prettier-ignore-start -->
 ```html
 <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://streak-stats.demolab.com?user=DenverCoder1&theme=dark" />
-    <img src="https://streak-stats.demolab.com?user=DenverCoder1&theme=default" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1&theme=dark" />
+    <img src="https://github-readme-streak-stats-black-phi.vercel.app/?user=DenverCoder1&theme=default" />
 </picture>
 ```
 <!-- prettier-ignore-end -->
@@ -82,3 +84,15 @@ Self-hosting the code can be done online and only takes a couple minutes. The be
 ### [📺 Click here for a video tutorial on how to self-host on Vercel](https://www.youtube.com/watch?v=maoXtlb8t44)
 
 See [Deploying it on your own](https://github.com/DenverCoder1/github-readme-streak-stats?tab=readme-ov-file#-deploying-it-on-your-own) in the Readme for detailed instructions.
+
+### What does `WHITELIST` control?
+
+`WHITELIST` is an explicit comma-separated list of GitHub usernames allowed by a deployment. Configure the exact usernames intended to be served; a non-listed username receives `403`. A missing, empty, wildcard, or malformed value fails closed, so every username receives `403` until a valid list is configured. This API policy is unrelated to GitHub collaborator permissions and does not grant anyone repository access.
+
+### What are the cache, limiter, and token policies?
+
+Successful cards are cacheable for the configured `CACHE_TTL` (which takes precedence over `CACHE_TTL_DEFAULT`); `DISABLE_CACHE=true` and all error responses use `no-store`, with a one-day fallback when no TTL is set. Self-hosted deployments use a file-based limit of 100 requests per minute per client IP. Vercel's isolated filesystem cannot provide a shared limiter, so use Vercel or an upstream WAF/API gateway for production abuse controls. `TOKEN` and `TOKEN2` through `TOKEN100` are server-side failover credentials only; rotate by adding the replacement, redeploying and verifying, then revoking and removing the old value. Never put token values in URLs, arguments, manifests, or logs.
+
+### Can I use the demo offline, and is PNG available?
+
+Yes. The demo uses fixture data and can be exercised offline without a GitHub token; keep it isolated from the card API and do not use production credentials in it. SVG works on Vercel. PNG requires Inkscape, so it is available on a self-hosted deployment that provides the renderer (preferably as an internal, resource-limited sidecar), but is not supported by the canonical Vercel deployment because Vercel's PHP behavior is unchanged and Inkscape is not installed there.

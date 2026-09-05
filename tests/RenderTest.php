@@ -45,6 +45,8 @@ final class RenderTest extends TestCase
      */
     public function testCardRender(): void
     {
+        // Preserve the existing animated fixture through the explicit opt-in.
+        $this->testParams["animation"] = "true";
         // Check that the card is rendered as expected
         $render = generateCard($this->testStats, $this->testParams);
         $expected = file_get_contents("tests/expected/test_card.svg");
@@ -65,6 +67,14 @@ final class RenderTest extends TestCase
         $render = generateErrorCard("An unknown error occurred", $this->testParams);
         $expected = file_get_contents("tests/expected/test_error_card.svg");
         $this->assertEquals($expected, $render);
+    }
+
+    public function testErrorCardEscapesMessageText(): void
+    {
+        $render = generateErrorCard("<script>alert('x')</script>", $this->testParams);
+
+        $this->assertStringContainsString("&lt;script&gt;alert(&#039;x&#039;)&lt;/script&gt;", $render);
+        $this->assertStringNotContainsString("<script>alert('x')</script>", $render);
     }
 
     /**
@@ -153,9 +163,55 @@ final class RenderTest extends TestCase
         $render = $response["body"];
         $this->assertStringNotContainsString("opacity: 0;", $render);
         $this->assertStringContainsString("opacity: 1;", $render);
-        $this->assertStringContainsString("font-size: 28px;", $render);
+        $this->assertStringContainsString("font-size='28px'", $render);
         $this->assertStringNotContainsString("animation:", $render);
         $this->assertStringNotContainsString("<style>", $render);
+    }
+
+    public function testErrorResponsesMatchRequestedOutputMode(): void
+    {
+        $svgResponse = generateOutput("Request failed", $this->testParams, 503);
+        $this->assertSame("image/svg+xml", $svgResponse["contentType"]);
+        $this->assertSame(503, $svgResponse["status"]);
+        $this->assertStringContainsString("Request failed", $svgResponse["body"]);
+
+        $jsonResponse = generateOutput("Request failed", ["type" => "json"], 503);
+        $this->assertSame("application/json; charset=UTF-8", $jsonResponse["contentType"]);
+        $this->assertSame(503, $jsonResponse["status"]);
+        $this->assertSame(["error" => "Request failed", "code" => 503], json_decode($jsonResponse["body"], true));
+    }
+
+    /**
+     * Test that date ranges retain their chronological order when rendered.
+     */
+    public function testDateRangesPreserveChronologicalOrder(): void
+    {
+        $stats = $this->testStats;
+        $stats["longestStreak"] = [
+            "start" => "2016-03-14",
+            "end" => "2016-12-19",
+            "length" => 281,
+        ];
+
+        $render = generateCard($stats, $this->testParams);
+
+        $this->assertStringContainsString("Mar 14, 2016 - Dec 19, 2016", $render);
+        $this->assertStringNotContainsString("Dec 19, 2016 - Mar 14, 2016", $render);
+    }
+
+    /**
+     * Test the animation removal seam independently from response generation.
+     */
+    public function testRemoveAnimationsRemovesAnimationRules(): void
+    {
+        $params = $this->testParams;
+        $params["animation"] = "true";
+        $static = removeAnimations(generateCard($this->testStats, $params));
+
+        $this->assertStringNotContainsString("<style>", $static);
+        $this->assertStringNotContainsString("animation:", $static);
+        $this->assertStringContainsString("opacity: 1;", $static);
+        $this->assertStringContainsString("font-size: 28px;", $static);
     }
 
     /**

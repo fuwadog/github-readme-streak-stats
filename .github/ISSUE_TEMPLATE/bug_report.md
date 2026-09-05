@@ -20,6 +20,18 @@ Steps to reproduce the behavior:
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
+**Deployment and request metadata**
+Please complete what applies. Sanitize all values before posting; never include a token, cookie, authorization header, or private user data.
+
+- Deployment target/URL (canonical Vercel, legacy alias, or self-hosted):
+- Provider/runtime (Vercel, Heroku, Docker, or other; PHP and Node versions):
+- Deployment branch:
+- Deployment commit SHA:
+- Route and query options (for example, `/?user=example&type=svg`; omit secrets):
+- HTTP status and response content type:
+- Reproduced at (UTC):
+- Sanitized environment details (OS, web server, `WHITELIST` enabled/disabled, cache settings):
+
 **Screenshots**
 If applicable, add screenshots to help explain your problem.
 

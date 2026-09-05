@@ -208,6 +208,19 @@ final class OptionsTest extends TestCase
     }
 
     /**
+     * Test that animation selection does not change the theme contract.
+     */
+    public function testAnimationOptionPreservesThemeParameters(): void
+    {
+        $params = ["theme" => "dark", "animation" => "true"];
+
+        $withAnimationOption = getRequestedTheme($params);
+        $withoutAnimationOption = getRequestedTheme(["theme" => "dark"]);
+
+        $this->assertSame($withoutAnimationOption, $withAnimationOption);
+    }
+
+    /**
      * Test date formatter for same year
      */
     public function testDateFormatSameYear(): void

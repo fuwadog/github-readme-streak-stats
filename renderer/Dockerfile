@@ -1,8 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Reuse the repository's already pinned Debian runtime base. Node is removed
-# below; it is used only because this digest is already verified in CI.
-FROM docker.io/library/node:24.7.0-bookworm-slim@sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78 AS renderer-base
+# Use a pinned Debian Trixie runtime base; the renderer does not require Node.
+FROM docker.io/library/debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS renderer-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

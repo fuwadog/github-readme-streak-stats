@@ -13,6 +13,12 @@ require_once dirname(__DIR__) . "/api/src/Output/SvgGenerator.php";
 
 final class PngRendererTest extends TestCase
 {
+    private const RENDERER_CONTRACT = [
+        "method" => "POST",
+        "path" => "/render",
+        "transport" => "private-unix-socket",
+        "content_type" => "image/png",
+    ];
     private const WIDTH = 10;
     private const HEIGHT = 20;
 
@@ -103,6 +109,7 @@ final class PngRendererTest extends TestCase
         });
 
         $this->assertSame($png, $capture["body"]);
+        $this->assertStringStartsWith("\x89PNG\r\n\x1a\n", $capture["body"]);
         $this->assertStringStartsWith("POST /render HTTP/1.1\r\n", $capture["request"]);
         $this->assertStringContainsString("Content-Type: application/json; charset=utf-8\r\n", $capture["request"]);
         $this->assertStringNotContainsString("png_base64", $capture["request"]);
@@ -164,6 +171,125 @@ final class PngRendererTest extends TestCase
                 return (new PngRendererClient($socket, maxPngBytes: 32))->render("<svg/>", self::WIDTH, self::HEIGHT);
             },
         );
+    }
+
+    public function testRendererContractUsesBoundedPrivateUnixSocket(): void
+    {
+        $this->assertSame("POST", self::RENDERER_CONTRACT["method"]);
+        $this->assertSame("/render", self::RENDERER_CONTRACT["path"]);
+        $this->assertSame("private-unix-socket", self::RENDERER_CONTRACT["transport"]);
+        $this->assertSame("image/png", self::RENDERER_CONTRACT["content_type"]);
+        $this->assertLessThanOrEqual(10_000, PngRendererClient::DEFAULT_READ_TIMEOUT_MS);
+        $this->assertLessThanOrEqual(
+            PngRendererClient::DEFAULT_MAX_FRAME_BYTES,
+            PngRendererClient::DEFAULT_MAX_SVG_BYTES + PngRendererClient::DEFAULT_MAX_HEADER_BYTES,
+        );
+
+        $source = file_get_contents(dirname(__DIR__) . "/api/src/Service/PngRendererClient.php");
+        $this->assertIsString($source);
+        $this->assertStringContainsString('"unix://"', $source);
+        $this->assertStringNotContainsString('"tcp://"', $source);
+        $this->assertStringNotContainsString("curl_", $source);
+    }
+
+    public function testInvalidDimensionsAreRejectedBeforeRendererConnection(): void
+    {
+        foreach ([[0, self::HEIGHT], [-1, self::HEIGHT], [self::WIDTH, 0], [4097, self::HEIGHT]] as [$width, $height]) {
+            try {
+                (new PngRendererClient("/tmp/renderer-must-not-connect.sock"))->render("<svg/>", $width, $height);
+                $this->fail("Invalid renderer dimensions were accepted.");
+            } catch (PngRendererException $error) {
+                $this->assertSame("invalid_dimensions", $error->rendererCode);
+            }
+        }
+    }
+
+    public function testInvalidResponseFrameIsRejectedBeforeBodyRead(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("response_too_large");
+
+        $this->runRenderer(
+            "HTTP/1.1 200 OK\r\n" .
+                "Content-Type: image/png\r\n" .
+                "Content-Length: 1024\r\n" .
+                "Connection: close\r\n\r\n",
+            function (string $socket): string {
+                return (new PngRendererClient($socket, maxFrameBytes: 256))->render(
+                    "<svg/>",
+                    self::WIDTH,
+                    self::HEIGHT,
+                );
+            },
+        );
+    }
+
+    public function testSuccessfulPngOutputRemainsPng(): void
+    {
+        $stats = [
+            "mode" => "daily",
+            "totalContributions" => 1,
+            "firstContribution" => "2020-01-01",
+            "longestStreak" => ["start" => "2020-01-01", "end" => "2020-01-01", "length" => 1],
+            "currentStreak" => ["start" => "2020-01-01", "end" => "2020-01-01", "length" => 1],
+            "excludedDays" => [],
+        ];
+        $png = $this->fixturePng(300, 170);
+
+        $capture = $this->runRenderer($this->httpResponse(200, "image/png", $png), function (string $socket) use (
+            $stats,
+        ): string {
+            $response = (new SvgGenerator(new PngRendererClient($socket)))->generateOutput($stats, [
+                "type" => "png",
+                "card_width" => "300",
+                "card_height" => "170",
+            ]);
+
+            $this->assertSame(200, $response["status"]);
+            $this->assertSame("image/png", $response["contentType"]);
+            return $response["body"];
+        });
+
+        $this->assertSame($png, $capture["body"]);
+    }
+
+    public function testRendererFailureUsesSafeSvgFallback(): void
+    {
+        $stats = [
+            "mode" => "daily",
+            "totalContributions" => 1,
+            "firstContribution" => "2020-01-01",
+            "longestStreak" => ["start" => "2020-01-01", "end" => "2020-01-01", "length" => 1],
+            "currentStreak" => ["start" => "2020-01-01", "end" => "2020-01-01", "length" => 1],
+            "excludedDays" => [],
+        ];
+        $socket = sys_get_temp_dir() . DIRECTORY_SEPARATOR . "renderer-fallback-" . bin2hex(random_bytes(8)) . ".sock";
+
+        $response = (new SvgGenerator(new PngRendererClient($socket)))->generateOutput($stats, ["type" => "png"]);
+
+        $this->assertSame(500, $response["status"]);
+        $this->assertSame("image/svg+xml", $response["contentType"]);
+        $this->assertStringStartsWith("<svg", $response["body"]);
+        $this->assertStringContainsString("PNG renderer error: renderer_unavailable", $response["body"]);
+        $this->assertStringNotContainsString("\x89PNG", $response["body"]);
+        $this->assertStringNotContainsString("<script", $response["body"]);
+        $this->assertStringNotContainsString($socket, $response["body"]);
+    }
+
+    public function testPngFallbackPreservesWhitelistDenialStatus(): void
+    {
+        $socket = sys_get_temp_dir() . DIRECTORY_SEPARATOR . "renderer-denial-" . bin2hex(random_bytes(8)) . ".sock";
+
+        $response = (new SvgGenerator(new PngRendererClient($socket)))->generateOutput(
+            "User not in whitelist.",
+            ["type" => "png"],
+            403,
+        );
+
+        $this->assertSame(403, $response["status"]);
+        $this->assertSame("image/svg+xml", $response["contentType"]);
+        $this->assertStringContainsString("User not in whitelist.", $response["body"]);
+        $this->assertStringNotContainsString("renderer_unavailable", $response["body"]);
     }
 
     public function testConfiguredSidecarFailureDoesNotUseLocalFallback(): void

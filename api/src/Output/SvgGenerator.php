@@ -5,9 +5,16 @@ declare(strict_types=1);
 namespace App\Output;
 
 use App\Service\PngRendererClient;
+use App\Service\PngRendererException;
 
 class SvgGenerator
 {
+    private const SERVERLESS_PNG_ERROR =
+        "PNG output is not supported on this platform. " .
+        "PNG conversion requires Inkscape which is not available on serverless platforms. " .
+        "Please use type=svg instead.";
+    private const PNG_CONVERSION_ERROR = "PNG conversion failed. Please use type=svg instead.";
+
     private readonly PngRendererClient $pngRenderer;
 
     public function __construct(?PngRendererClient $pngRenderer = null)
@@ -718,24 +725,14 @@ class SvgGenerator
         }
 
         if ($this->isServerlessEnvironment()) {
-            throw new \InvalidArgumentException(
-                "PNG output is not supported on this platform. " .
-                    "PNG conversion requires Inkscape which is not available on serverless platforms. " .
-                    "Please use type=svg instead.",
-                500,
-            );
+            throw new \InvalidArgumentException(self::SERVERLESS_PNG_ERROR, 500);
         }
 
         if (!function_exists("shell_exec") || shell_exec("echo test") === null) {
-            throw new \InvalidArgumentException(
-                "PNG output is not supported on this platform. " .
-                    "PNG conversion requires Inkscape which is not available on serverless platforms. " .
-                    "Please use type=svg instead.",
-                500,
-            );
+            throw new \InvalidArgumentException(self::SERVERLESS_PNG_ERROR, 500);
         }
 
-        $inkscapeCheck = shell_exec("inkscape --version 2>&1");
+        $inkscapeCheck = shell_exec("inkscape --version 2>/dev/null");
         if (empty($inkscapeCheck) || strpos($inkscapeCheck, "Inkscape") === false) {
             throw new \InvalidArgumentException(
                 "PNG output requires Inkscape to be installed on the server. " .
@@ -752,8 +749,7 @@ class SvgGenerator
         $png = shell_exec($cmd);
 
         if (empty($png)) {
-            $error = shell_exec("$cmd 2>&1");
-            throw new \InvalidArgumentException("Failed to convert SVG to PNG: {$error}", 500);
+            throw new \InvalidArgumentException(self::PNG_CONVERSION_ERROR, 500);
         }
 
         return $png;
@@ -862,13 +858,15 @@ class SvgGenerator
                     "status" => $errorCode,
                     "body" => $png,
                 ];
-            } catch (\Exception $e) {
+            } catch (\Throwable $error) {
                 return [
                     "contentType" => "image/svg+xml",
-                    "status" => 500,
-                    "body" => $this->generateErrorCard(
-                        $e->getMessage(),
-                        ["animation" => "false", "disable_animations" => "true"] + $params,
+                    "status" => $this->getPngFallbackStatus($errorCode),
+                    "body" => $this->removeAnimations(
+                        $this->generateErrorCard(
+                            $this->getPngFallbackMessage($output, $errorCode, $error),
+                            ["animation" => "false", "disable_animations" => "true"] + $params,
+                        ),
                     ),
                 ];
             }
@@ -883,6 +881,33 @@ class SvgGenerator
             "status" => $errorCode,
             "body" => $svg,
         ];
+    }
+
+    private function getPngFallbackStatus(int $errorCode): int
+    {
+        return $errorCode === 403 ? 403 : 500;
+    }
+
+    private function getPngFallbackMessage(string|array $output, int $errorCode, \Throwable $error): string
+    {
+        if ($output === "User not in whitelist." && $errorCode === 403) {
+            return $output;
+        }
+
+        return $this->getSafePngErrorMessage($error);
+    }
+
+    private function getSafePngErrorMessage(\Throwable $error): string
+    {
+        if (!($error instanceof PngRendererException)) {
+            return self::PNG_CONVERSION_ERROR;
+        }
+
+        $rendererCode = strtolower($error->rendererCode);
+        if (preg_match("/^[a-z0-9_]{1,32}$/", $rendererCode) !== 1) {
+            $rendererCode = "renderer_failed";
+        }
+        return "PNG renderer error: {$rendererCode}";
     }
 
     /**

@@ -51,6 +51,93 @@ final class DemoSecurityTest extends TestCase
         }
     }
 
+    public function testEncodedAndNormalizedTraversalIsRejected(): void
+    {
+        $staticPath = dirname(__DIR__) . "/api/demo/vercel-static.php";
+        foreach (
+            [
+                "../composer.json",
+                "css/../../composer.json",
+                "css/../../preview.php",
+                "%2e%2e/composer.json",
+                "..%2fcomposer.json",
+            ]
+            as $path
+        ) {
+            $script =
+                '$_GET = ' .
+                var_export(["__demo_path" => $path], true) .
+                "; require " .
+                var_export($staticPath, true) .
+                ";";
+
+            $this->assertSame("Not found", $this->runPhp($script), "Traversal path was served: {$path}");
+        }
+    }
+
+    public function testSymlinkToOutsideDemoRootIsRejectedBeforeAllowlisting(): void
+    {
+        $allowedPath = dirname(__DIR__) . "/api/demo/css/style.css";
+        $backupPath = $allowedPath . ".security-test-backup";
+        $outsidePath = dirname(__DIR__) . "/composer.json";
+        $this->assertFileExists($allowedPath);
+        $this->assertFileDoesNotExist($backupPath);
+
+        $this->assertTrue(rename($allowedPath, $backupPath));
+        $linked = false;
+        try {
+            try {
+                $linked = symlink($outsidePath, $allowedPath);
+            } catch (\Throwable $error) {
+                $this->markTestSkipped("Symlinks are unavailable: {$error->getMessage()}");
+            }
+            if (!$linked) {
+                $this->markTestSkipped("Symlinks are unavailable on this test runner.");
+            }
+
+            $script =
+                '$_GET = ' .
+                var_export(["__demo_path" => "css/style.css"], true) .
+                "; require " .
+                var_export(dirname(__DIR__) . "/api/demo/vercel-static.php", true) .
+                ";";
+            $this->assertSame("Not found", $this->runPhp($script));
+        } finally {
+            if ($linked && is_link($allowedPath)) {
+                unlink($allowedPath);
+            }
+            if (file_exists($backupPath)) {
+                rename($backupPath, $allowedPath);
+            }
+        }
+    }
+
+    public function testStaticRouteOnlyServesApprovedAssetsAndPreview(): void
+    {
+        $staticPath = dirname(__DIR__) . "/api/demo/vercel-static.php";
+        $assetScript =
+            '$_GET = ' .
+            var_export(["__demo_path" => "css/style.css"], true) .
+            "; require " .
+            var_export($staticPath, true) .
+            ";";
+        $this->assertStringContainsString("body", $this->runPhp($assetScript));
+
+        $secretPath = dirname(__DIR__) . "/api/demo/security-test.php";
+        file_put_contents($secretPath, "<?php echo 'secret';");
+        try {
+            $secretScript =
+                '$_GET = ' .
+                var_export(["__demo_path" => "security-test.php"], true) .
+                "; require " .
+                var_export($staticPath, true) .
+                ";";
+            $this->assertSame("Forbidden", $this->runPhp($secretScript));
+        } finally {
+            unlink($secretPath);
+        }
+    }
+
     public function testPreviewSupportsOnlyDailyAndWeeklyModes(): void
     {
         $previewPath = dirname(__DIR__) . "/api/demo/preview.php";

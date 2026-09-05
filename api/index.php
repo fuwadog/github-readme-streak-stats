@@ -7,6 +7,11 @@ require_once "stats.php";
 require_once "card.php";
 
 define("API_ROOT", __DIR__);
+const MAX_QUERY_STRING_BYTES = 8192;
+const MAX_REQUEST_BODY_BYTES = 8192;
+const MAX_RATE_METADATA_BYTES = 8192;
+const CLIENT_ERROR_MESSAGE = "Unable to process request.";
+const INTERNAL_ROUTES = ["api", "demo-index", "demo-preview", "demo-static"];
 
 // Set UTC timezone for consistent date handling across all environments
 date_default_timezone_set("UTC");
@@ -150,8 +155,8 @@ function checkRateLimit(): bool
         fclose($fp);
         return false;
     }
-    $data = stream_get_contents($fp);
-    if ($data === false) {
+    $data = stream_get_contents($fp, MAX_RATE_METADATA_BYTES + 1);
+    if ($data === false || strlen($data) > MAX_RATE_METADATA_BYTES) {
         flock($fp, LOCK_UN);
         fclose($fp);
         return false;
@@ -233,13 +238,84 @@ function isValidExcludeDays(string $excludeDaysRaw): bool
     return true;
 }
 
-// redirect to demo site if user is not given
-if (!isset($_GET["user"])) {
-    header("Location: demo/");
-    exit();
+function validateRequestLimits(): void
+{
+    $method = $_SERVER["REQUEST_METHOD"] ?? "GET";
+    if (!is_string($method) || !in_array(strtoupper($method), ["GET", "HEAD"], true)) {
+        header("Allow: GET, HEAD");
+        throw new InvalidArgumentException("Method not allowed.", 405);
+    }
+
+    $queryString = $_SERVER["QUERY_STRING"] ?? null;
+    if ($queryString === null && isset($_SERVER["REQUEST_URI"]) && is_string($_SERVER["REQUEST_URI"])) {
+        $queryString = parse_url($_SERVER["REQUEST_URI"], PHP_URL_QUERY) ?? "";
+    }
+    $queryString ??= "";
+    if (!is_string($queryString) || strlen($queryString) > MAX_QUERY_STRING_BYTES) {
+        throw new InvalidArgumentException("Request query is too large.", 413);
+    }
+
+    $contentLength = $_SERVER["CONTENT_LENGTH"] ?? "";
+    if (
+        $contentLength !== "" &&
+        (!is_string($contentLength) || !ctype_digit($contentLength) || (int) $contentLength > MAX_REQUEST_BODY_BYTES)
+    ) {
+        throw new InvalidArgumentException("Request body is too large.", 413);
+    }
+}
+
+function getInternalRoute(): string
+{
+    $route = $_GET["__route"] ?? "api";
+    unset($_GET["__route"]);
+    if (!is_string($route) || !in_array($route, INTERNAL_ROUTES, true)) {
+        throw new InvalidArgumentException("Not found.", 404);
+    }
+    return $route;
+}
+
+function getErrorStatus(Throwable $error): int
+{
+    $status = $error->getCode();
+    return $status >= 400 && $status <= 599 ? $status : 500;
+}
+
+function getErrorType(Throwable $error): string
+{
+    $class = str_replace("\\", "/", $error::class);
+    $type = basename($class);
+    if (preg_match("/^[A-Za-z][A-Za-z0-9_.-]{0,31}$/", $type) !== 1) {
+        return "unknown";
+    }
+    return $type;
 }
 
 try {
+    $route = getInternalRoute();
+    validateRequestLimits();
+
+    switch ($route) {
+        case "api":
+            break;
+        case "demo-index":
+            require __DIR__ . "/demo/index.php";
+            exit();
+        case "demo-preview":
+            require __DIR__ . "/demo/preview.php";
+            exit();
+        case "demo-static":
+            require __DIR__ . "/demo/vercel-static.php";
+            exit();
+        default:
+            throw new InvalidArgumentException("Not found.", 404);
+    }
+
+    // redirect to demo site if user is not given
+    if (!isset($_GET["user"])) {
+        header("Location: demo/");
+        exit();
+    }
+
     if (!checkRateLimit()) {
         header("Retry-After: 60");
         renderOutput("Rate limit exceeded. Please try again later.", 429);
@@ -315,11 +391,15 @@ try {
     }
 
     renderOutput($stats, 200, null, $cacheControl);
-} catch (InvalidArgumentException | RuntimeException $error) {
+} catch (Throwable $error) {
+    $status = getErrorStatus($error);
     setNoStoreHeaders();
-    error_log("Error {$error->getCode()}: {$error->getMessage()}");
-    if ($error->getCode() >= 500) {
-        error_log($error->getTraceAsString());
-    }
-    renderOutput($error->getMessage(), $error->getCode());
+    error_log("request_failed event=api_exception status={$status} type=" . getErrorType($error));
+    $message =
+        $error instanceof InvalidArgumentException &&
+        $error->getCode() === 403 &&
+        $error->getMessage() === "User not in whitelist."
+            ? $error->getMessage()
+            : CLIENT_ERROR_MESSAGE;
+    renderOutput($message, $status);
 }

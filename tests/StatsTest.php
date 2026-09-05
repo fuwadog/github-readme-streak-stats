@@ -207,6 +207,22 @@ final class StatsTest extends TestCase
         $client->getGraphQLCurlHandle("query", "fixture-token");
     }
 
+    public function testGraphQLRequestsShareOneMonotonicDeadline(): void
+    {
+        $client = new \App\Client\GitHubClient(["fixture-token"]);
+        $deadline = new ReflectionProperty(\App\Client\GitHubClient::class, "deadlineNanoseconds");
+
+        $firstHandle = $client->getGraphQLCurlHandle("query", "fixture-token");
+        $firstDeadline = $deadline->getValue($client);
+        $secondHandle = $client->getGraphQLCurlHandle("query", "fixture-token");
+        $secondDeadline = $deadline->getValue($client);
+        curl_close($firstHandle);
+        curl_close($secondHandle);
+
+        $this->assertIsInt($firstDeadline);
+        $this->assertSame($firstDeadline, $secondDeadline);
+    }
+
     public function testExhaustedAttemptBudgetAbortsBeforeAnotherRetry(): void
     {
         $client = new \App\Client\GitHubClient(["fixture-token"]);

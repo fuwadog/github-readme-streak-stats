@@ -107,6 +107,34 @@ jobs:
                       docker.io/rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 \
                       -c 'actionlint /repo/.github/workflows/*.yml'
 
+            - name: Verify Vercel function and renderer isolation contracts
+              run: |
+                  set -euo pipefail
+                  jq -e '
+                      (.routes[-1].handle == "filesystem") and
+                      (.functions | (type == "object" and length == 1 and .["api/index.php"].runtime == "vercel-php@0.7.4")) and
+                      ([.routes[] | select(.src == "/api/.*\\.php(?:/.*)?$") | .status] == [404]) and
+                      ([.routes[] | select(.src == "/$") | .dest] == ["/api/index.php?__route=api"]) and
+                      ([.routes[] | select(.src == "/demo/?$") | .dest] == ["/api/index.php?__route=demo-index"]) and
+                      ([.routes[] | select(.src == "/demo/(.+)$") | .dest] == ["/api/index.php?__route=demo-static&__demo_path=$1"]) and
+                      ([.routes[] | select(.src == "/demo/preview\\.php(?:/.*)?$") | .dest] == ["/api/index.php?__route=demo-preview"])
+                  ' vercel.json >/dev/null
+
+                  docker compose --profile test config --format json > /tmp/streak-compose.json
+                  jq -e '
+                      .services.renderer.network_mode == "none" and
+                      .services.renderer.read_only == true and
+                      ((.services.renderer.ports // []) | length == 0) and
+                      ((.services.renderer.cap_drop // []) | index("ALL") != null) and
+                      ((.services.renderer.security_opt // []) | index("no-new-privileges:true") != null) and
+                      .services["renderer-tests"].network_mode == "none" and
+                      .services["renderer-tests"].read_only == true and
+                      ((.services["renderer-tests"].ports // []) | length == 0) and
+                      ((.services["renderer-tests"].cap_drop // []) | index("ALL") != null) and
+                      ((.services["renderer-tests"].security_opt // []) | index("no-new-privileges:true") != null)
+                  ' /tmp/streak-compose.json >/dev/null
+                  ! grep -Eq '^[[:space:]]*EXPOSE[[:space:]]' renderer/Dockerfile
+
             - name: Build non-deployed verification target
               run: docker build --pull --target verification --tag streak-stats-verification .
 

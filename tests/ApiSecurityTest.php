@@ -74,6 +74,16 @@ final class ApiSecurityTest extends TestCase
         $this->assertFalse($service->isWhitelisted("other-user"));
     }
 
+    public function testRuntimeWhitelistConfigurationIsTheOnlySourceForAdditionalUsers(): void
+    {
+        $_SERVER["WHITELIST"] = "fuwadog";
+
+        $service = new WhitelistService();
+
+        $this->assertTrue($service->isWhitelisted("fuwadog"));
+        $this->assertFalse($service->isWhitelisted("other-user"));
+    }
+
     public function testMalformedWhitelistDeniesEveryUser(): void
     {
         foreach (["bad/user", "listed-user,", ["listed-user", 42]] as $configuration) {
@@ -118,6 +128,19 @@ final class ApiSecurityTest extends TestCase
         $this->assertFalse($method->invoke($client, 200, (object) ["data" => (object) []], ""));
     }
 
+    public function testMissingGitHubErrorDetailsUseTheGenericFallback(): void
+    {
+        $client = new GitHubClient(["test-token"]);
+        $method = new ReflectionMethod($client, "getResponseErrorMessage");
+        $method->setAccessible(true);
+
+        $this->assertSame("An API error occurred.", $method->invoke($client, "not-json"));
+        $this->assertSame(
+            "An API error occurred.",
+            $method->invoke($client, (object) ["errors" => [(object) ["type" => "UNKNOWN"]]]),
+        );
+    }
+
     public function testTrustedProxyAndServerlessRateLimitContractsAreEnforced(): void
     {
         // Arrange
@@ -136,6 +159,53 @@ final class ApiSecurityTest extends TestCase
         $vercel = file_get_contents(dirname(__DIR__, 1) . "/vercel.json");
         $this->assertIsString($vercel);
         $this->assertStringNotContainsString('"key": "Cache-Control"', $vercel);
+    }
+
+    public function testVercelUsesOneAllowlistedDispatcherFunction(): void
+    {
+        $vercel = json_decode((string) file_get_contents(dirname(__DIR__, 1) . "/vercel.json"), true);
+
+        $this->assertIsArray($vercel);
+        $routes = $vercel["routes"] ?? [];
+        $this->assertIsArray($routes);
+        $lastRoute = $routes[array_key_last($routes)] ?? [];
+        $this->assertSame("filesystem", $lastRoute["handle"] ?? null);
+        $this->assertCount(1, $vercel["functions"] ?? []);
+        $this->assertArrayHasKey("api/index.php", $vercel["functions"] ?? []);
+
+        $directPhpRouteIndex = null;
+        $canonicalRouteSources = ["/$", "/demo/preview\\.php(?:/.*)?$", "/demo/?$", "/demo/(.+)$"];
+        foreach ($routes as $index => $route) {
+            if (($route["src"] ?? null) === "/api/.*\\.php(?:/.*)?$") {
+                $directPhpRouteIndex = $index;
+                $this->assertSame(404, $route["status"] ?? null);
+            }
+        }
+        $this->assertNotNull($directPhpRouteIndex);
+        foreach ($canonicalRouteSources as $source) {
+            $canonicalIndex = array_search($source, array_column($routes, "src"), true);
+            $this->assertIsInt($canonicalIndex);
+            $this->assertLessThan($directPhpRouteIndex, $canonicalIndex);
+        }
+
+        $destinations = array_values(
+            array_filter(
+                array_map(static fn(array $route): mixed => $route["dest"] ?? null, $vercel["routes"] ?? []),
+                static fn(mixed $destination): bool => is_string($destination),
+            ),
+        );
+        foreach ($destinations as $destination) {
+            $this->assertStringStartsWith("/api/index.php", $destination);
+        }
+
+        $index = file_get_contents(dirname(__DIR__, 1) . "/api/index.php");
+        $this->assertIsString($index);
+        foreach (
+            ["getInternalRoute", "validateRequestLimits", "MAX_QUERY_STRING_BYTES", "REQUEST_METHOD", "CONTENT_LENGTH"]
+            as $contract
+        ) {
+            $this->assertStringContainsString($contract, $index);
+        }
     }
 
     public function testGitHubTokenIsRedactedFromDiagnosticMessages(): void

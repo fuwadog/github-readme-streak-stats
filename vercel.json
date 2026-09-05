@@ -1,9 +1,20 @@
 {
 	"routes": [
-		{ "handle": "filesystem" },
-		{ "src": "/demo/?", "dest": "/api/demo/index.php" },
-		{ "src": "/demo/(.+)", "dest": "/api/demo/vercel-static.php" },
-		{ "src": "/", "dest": "/api/index.php" }
+		{ "src": "/$", "dest": "/api/index.php?__route=api" },
+		{
+			"src": "/demo/preview\\.php(?:/.*)?$",
+			"dest": "/api/index.php?__route=demo-preview"
+		},
+		{
+			"src": "/demo/?$",
+			"dest": "/api/index.php?__route=demo-index"
+		},
+		{
+			"src": "/demo/(.+)$",
+			"dest": "/api/index.php?__route=demo-static&__demo_path=$1"
+		},
+		{ "src": "/api/.*\\.php(?:/.*)?$", "status": 404 },
+		{ "handle": "filesystem" }
 	],
 	"headers": [
 		{
@@ -20,7 +31,7 @@
 		}
 	],
 	"functions": {
-		"api/**/*": {
+		"api/index.php": {
 			"runtime": "vercel-php@0.7.4"
 		}
 	}

@@ -160,9 +160,17 @@ You can deploy the PHP files on any website server with PHP installed including 
 
 Inkscape is required for PNG rendering. Segoe UI is preferred for the intended rendering, but the SVG uses fallback fonts when it is unavailable. If using Heroku, the buildpacks will install Inkscape for you automatically.
 
+#### Vercel Hobby route and function contracts
+
+**ROUTE_CONTRACT:** Keep the public production URL `https://github-readme-streak-stats-black-phi.vercel.app` unchanged. The legacy production alias `https://streak-stats.demolab.com` remains valid for existing embeds. `/` serves the card API, `/demo/` serves the demo, and `/demo/<asset>` serves demo assets. Preserve existing query behavior on those routes. These are the only documented public routes; direct PHP files must never expose source, environment variables, or tokens.
+
+**FUNCTION_CONTRACT:** The Vercel Hobby deployment uses one PHP function configuration for `api/index.php` through the existing `vercel-php` runtime. The Node.js toolchain and the isolated renderer are not additional public Vercel functions. Do not replace the PHP runtime, add a public renderer listener, or change the routes in `vercel.json`.
+
+Preview deployments and deployment URLs are protected with Vercel Authentication or password protection. Only the production deployment is a public embed host. Never put a preview URL in a README or use it as a substitute for the canonical production URL.
+
 #### Runtime and renderer policy
 
-Node.js 24.x is the target for the formatter, verification jobs, and any isolated renderer sidecar. It is tooling only: the application remains PHP, and changing the Node version does not change Vercel's PHP behavior. Vercel continues to route the PHP functions through the existing PHP runtime; do not replace that runtime or change the routes in `vercel.json`.
+Node.js 24.x is the target for the formatter, verification jobs, and any isolated renderer sidecar. It is tooling only: the application remains PHP, and changing the Node version does not change Vercel's PHP behavior.
 
 For self-hosting PNG support, keep Inkscape in an isolated renderer process or sidecar where possible. The renderer must have a read-only filesystem, no public ingress, no GitHub token, bounded input size and execution time, and no network egress. Only the application should be public. The current Vercel deployment does not include Inkscape, so its supported public output remains SVG; PNG requests there are a documented limitation, not a reason to change the deployment identity or routes.
 
@@ -175,7 +183,7 @@ Use `https://github-readme-streak-stats-black-phi.vercel.app` as the canonical h
 > [!NOTE]
 > PNG mode is not supported since Inkscape will not be installed but the default SVG mode will work.
 
-Protect every Vercel preview and preview deployment URL with Vercel Authentication or password protection. Preview URLs are for authorized testing only and must never be used in public README embeds. Keep the canonical production URL above public and unchanged.
+PNG requests on Vercel use a controlled SVG error-card fallback with HTTP status `500` and `image/svg+xml` because Inkscape is not installed. The fallback is not a successful card or PNG response. Use `type=svg` for public production embeds; PNG remains available only on a self-hosted deployment with the isolated renderer or another explicitly isolated renderer.
 
 ### 📺 [Click here for a video tutorial on how to self-host on Vercel](https://www.youtube.com/watch?v=maoXtlb8t44)
 
@@ -233,6 +241,8 @@ Protect every Vercel preview and preview deployment URL with Vercel Authenticati
 > To set up automatic Vercel deployments from GitHub, make sure to turn **off** "Include source files outside of the Root Directory" in the General settings and use `vercel` as the production branch in the Git settings.
 
 The production deployment configuration is protected by this contract: keep the production branch as `vercel`, keep the repository root as the project root, leave **"Include source files outside of the Root Directory"** disabled, and keep `TOKEN` and any `TOKEN2`-style variables in Vercel's encrypted Environment Variables only. Do not put token values in the repository, deployment URL, query string, process arguments, or build logs. Protect preview deployments with Vercel Authentication or password protection, separately from production. The routes in `vercel.json` are also part of the deployment contract: `/` serves `api/index.php`, `/demo/` serves the demo, and `/demo/<asset>` serves demo assets. Do not change the canonical deployment identity while applying these settings.
+
+Repository checks and deployed Vercel evidence are different release gates. Repository checks prove fail-closed behavior for missing, empty, wildcard, or malformed `WHITELIST`; they do not prove the state of a deployed project. Before calling a release complete, manually record evidence for the production project and deployment: the one-function route contract, encrypted `TOKEN`/`TOKENn` and user-managed `WHITELIST` configuration, protected previews, the configured Hobby WAF project rule (key, window, and regional scope), and provenance linking the deployment to the `vercel` branch and source commit. This documentation does not claim that those Vercel checks have been performed.
 
 > ⚠️ **Note**
 > Node.js 24.x applies only to formatter, verification, and isolated renderer tooling. A libssl or PHP function error is not fixed by changing the Vercel PHP runtime; verify the existing PHP deployment and routes instead.
@@ -319,7 +329,7 @@ Docker is a great option for self-hosting with full control over your environmen
 The card endpoint is a public, anonymous `GET` API. The caller supplies a GitHub username and display options; the caller must never supply or receive the server's GitHub token. Tokens are server-side environment variables only, and a GitHub token with no additional scopes is sufficient for the documented contribution requests. Do not put a token in a URL, issue, screenshot, log, or command-line argument.
 
 - `WHITELIST` is the explicit comma-separated access list for the public deployment, matched case-insensitively. Set it to the exact GitHub usernames that are approved, for example `DenverCoder1`; missing, empty, wildcard, or malformed configuration denies every username, while other valid usernames return `403`. This list is independent of GitHub repository collaborator permissions.
-- Self-hosted deployments enforce a file-based limit of 100 requests per minute per client IP. Serverless deployments fail with a configuration error unless `EXTERNAL_RATE_LIMITER=true` explicitly indicates that an upstream limiter is active.
+- Self-hosted deployments enforce a file-based limit of 100 requests per minute per client IP. Serverless deployments fail with a configuration error unless `EXTERNAL_RATE_LIMITER=true` explicitly indicates that an upstream limiter is active; use Vercel or an upstream WAF/API gateway for production abuse controls. On Vercel Hobby, manually verify the project's single WAF rule and record its client-IP or JA4 key, 10-second-to-10-minute window, and regional scope; repository fail-closed tests do not prove that deployed WAF evidence.
 - Successful cards are publicly cacheable. Set `CACHE_TTL` or `CACHE_TTL_DEFAULT` to a positive number of seconds; `CACHE_TTL` takes precedence. `DISABLE_CACHE=true` sends `no-store`, and error responses are always `no-store`. If no TTL is configured, the response fallback is one day.
 - `TOKEN` is the primary token. Add `TOKEN2`, `TOKEN3`, through `TOKEN100` as additional failover tokens. A token that is rate-limited is removed from the current process's pool and the request retries with another available token; if none remain, the service returns `429`. This is failover, not a replacement for rotating credentials.
 

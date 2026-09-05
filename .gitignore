@@ -32,7 +32,11 @@ cache/
 .vercel/**
 !.vercel/project.json
 coverage/
+coverage.xml
+.ruff_cache/
 renderer/__pycache__/
+__pycache__/
+*.py[cod]
 
 # PHP/PHPUnit
 php-*/

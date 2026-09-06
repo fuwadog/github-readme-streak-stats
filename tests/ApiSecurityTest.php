@@ -128,6 +128,32 @@ final class ApiSecurityTest extends TestCase
         $this->assertFalse($method->invoke($client, 200, (object) ["data" => (object) []], ""));
     }
 
+    public function testEnvironmentTemplateContainsNoCredentialsOrEnabledServerlessBypass(): void
+    {
+        // Arrange
+        $envExample = file_get_contents(dirname(__DIR__, 1) . "/.env.example");
+
+        // Act and Assert
+        $this->assertIsString($envExample);
+        $this->assertMatchesRegularExpression('/^TOKEN=\s*$/m', $envExample);
+        $this->assertMatchesRegularExpression('/^WHITELIST=\s*$/m', $envExample);
+        $this->assertMatchesRegularExpression('/^EXTERNAL_RATE_LIMITER=false\s*$/mi', $envExample);
+        $this->assertDoesNotMatchRegularExpression('/^EXTERNAL_RATE_LIMITER=(?:true|1)\s*$/mi', $envExample);
+        $this->assertStringContainsString("WAF", $envExample);
+        $this->assertStringContainsString("Production", $envExample);
+
+        foreach (preg_split("/\R/", $envExample) ?: [] as $line) {
+            if (preg_match('/^TOKEN\d*\s*=\s*(.*)$/', $line, $matches) === 1) {
+                $this->assertSame("", trim($matches[1]));
+            }
+        }
+
+        $this->assertDoesNotMatchRegularExpression(
+            "/(?:gh[pousr]_|github_pat_|BEGIN (?:RSA|OPENSSH) PRIVATE KEY)/i",
+            $envExample,
+        );
+    }
+
     public function testMissingGitHubErrorDetailsUseTheGenericFallback(): void
     {
         $client = new GitHubClient(["test-token"]);

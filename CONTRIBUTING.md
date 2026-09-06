@@ -144,7 +144,7 @@ git remote add upstream https://github.com/DenverCoder1/github-readme-streak-sta
 
 For deployments, preserve the existing metadata while syncing the fork: the Vercel production branch is `vercel`, the repository root is the project root, and the `vercel.json` routes must remain unchanged. Keep production tokens in the hosting provider's secret store; do not add them to Git, issue reports, or commands.
 
-In Vercel, use encrypted Environment Variables for `TOKEN`, `TOKEN2`-style failover values, and the explicit `WHITELIST`. Protect preview deployments with Vercel Authentication or password protection. This deployment access control is separate from `WHITELIST` (which controls requested GitHub usernames) and from GitHub collaborator permissions (which control repository actions); changing one must not be treated as changing either of the others.
+In Vercel, use encrypted **Production** Environment Variables for `TOKEN`, `TOKEN2`-style failover values, and the explicit `WHITELIST`. Configure the Hobby WAF rule before setting `EXTERNAL_RATE_LIMITER=true`, and keep that assertion Production-scoped. Protect every preview and preview deployment URL with Vercel Authentication or password protection. This deployment access control is separate from `WHITELIST` (which controls requested GitHub usernames) and from GitHub collaborator permissions (which control repository actions); changing one must not be treated as changing either of the others.
 
 Before a production cutover, run the sidecar health checks and compare fixed, sanitized requests against the canonical deployment and the candidate: status code, content type, SVG structure, and PNG bytes when PNG is supported. Exercise the demo separately with no token and confirm it uses fixture data. A differential mismatch blocks cutover until explained; do not print tokens or full request URLs in the comparison output.
 
@@ -152,9 +152,9 @@ Before a production cutover, run the sidecar health checks and compare fixed, sa
 
 These are manual evidence requirements, not claims that the checks have already been performed. Record the project and deployment identifiers, source commit, and production branch as provenance, without recording secrets or full request URLs.
 
-- Confirm `TOKEN` and all `TOKENn` failover values are encrypted hosting-provider Environment Variables, never repository files, URLs, arguments, fixtures, or logs.
+- Confirm `TOKEN` and all `TOKENn` failover values are encrypted **Production** hosting-provider Environment Variables, never repository files, URLs, arguments, fixtures, or logs.
 - Confirm the user-managed production `WHITELIST` still contains `fuwadog` and has not been changed by the release check. Do not edit that list as part of this task; verify denial for a non-listed user separately.
-- Confirm the Vercel Hobby project has its single WAF rule configured deliberately; retain evidence of the client-IP or JA4 key, 10-second-to-10-minute window, and regional scope.
+- Confirm the Vercel Hobby project has its single WAF rule configured deliberately; retain evidence of the client-IP or JA4 key, 10-second-to-10-minute window, and regional scope, then confirm the Production `EXTERNAL_RATE_LIMITER=true` assertion was enabled afterward.
 - Confirm Vercel Authentication or password protection is enabled for every preview and preview deployment URL. Only the public production URL may be used in README embeds.
 - Confirm the `vercel` production branch, repository root, route contract, and one-function PHP deployment remain unchanged. Compare sanitized production requests for status, content type, and the controlled SVG fallback; do not expose tokens or full request URLs.
 - Do not commit, push, or deploy while performing these checks; repository fail-closed tests do not substitute for this deployed Vercel evidence.

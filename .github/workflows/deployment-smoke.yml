@@ -2,6 +2,11 @@ name: Deployment smoke
 
 on:
     workflow_dispatch:
+        inputs:
+            production_user:
+                description: Allowlisted production GitHub username to probe
+                required: true
+                type: string
     push:
         branches:
             - main
@@ -14,7 +19,7 @@ permissions:
 
 env:
     CANONICAL_URL: https://github-readme-streak-stats-black-phi.vercel.app
-    ALLOWED_USER: fuwadog
+    PRODUCTION_USER: ${{ inputs.production_user }}
     SELF_HOSTED_ALLOWED_USER: DenverCoder1
     DENIED_USER: streak-smoke-denied-user
     SELF_HOSTED_URL: http://127.0.0.1:8080
@@ -26,7 +31,21 @@ jobs:
             - name: Checkout
               uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-            - name: Assert canonical HTTPS and root route
+            - name: Validate manual production username
+              if: ${{ github.event_name == 'workflow_dispatch' }}
+              run: |
+                  set -euo pipefail
+                  if [[ ! "$PRODUCTION_USER" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$ ]]; then
+                      echo "production_user must match the application GitHub username format" >&2
+                      exit 1
+                  fi
+
+            - name: Explain skipped automated production probes
+              if: ${{ github.event_name != 'workflow_dispatch' }}
+              run: 'echo "::notice::Skipped whitelist-dependent canonical positive probes: automated runs have no production_user input."'
+
+            - name: Assert canonical HTTPS and root SVG route
+              if: ${{ inputs.production_user != '' }}
               run: |
                   set -euo pipefail
                   case "$CANONICAL_URL" in
@@ -34,37 +53,49 @@ jobs:
                       *) echo "Canonical deployment URL must use HTTPS" >&2; exit 1 ;;
                   esac
                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --dump-header /tmp/streak-root.headers \
                       --output /tmp/streak-root.svg \
                       --write-out '%{http_code}' \
-                      "$CANONICAL_URL/?user=$ALLOWED_USER")"
+                      --get \
+                      --data-urlencode "user=$PRODUCTION_USER" \
+                      --data-urlencode "type=svg" \
+                      "$CANONICAL_URL/")"
                   test "$status" = "200"
+                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-root.headers
                   grep -Fq "<svg" /tmp/streak-root.svg
+                  if grep -Fq "animation:" /tmp/streak-root.svg; then
+                      echo "Unexpected animation in default SVG response" >&2
+                      exit 1
+                  fi
 
-            - name: Assert canonical listed user and cache headers
+            - name: Assert canonical listed SVG and opt-in animation
+              if: ${{ inputs.production_user != '' }}
               run: |
                   set -euo pipefail
                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
                       --dump-header /tmp/streak-listed.headers \
                       --output /tmp/streak-listed.svg \
                       --write-out '%{http_code}' \
-                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=svg")"
+                      --get \
+                      --data-urlencode "user=$PRODUCTION_USER" \
+                      --data-urlencode "type=svg" \
+                      "$CANONICAL_URL/")"
                   test "$status" = "200"
                   grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-listed.headers
                   grep -Eiq '^cache-control: public, max-age=[0-9]+' /tmp/streak-listed.headers
                   grep -Fq "<svg" /tmp/streak-listed.svg
-
-            - name: Assert canonical fuwadog whitelist entry
-              run: |
-                  set -euo pipefail
                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
-                      --dump-header /tmp/streak-fuwadog.headers \
-                      --output /tmp/streak-fuwadog.svg \
+                      --output /tmp/streak-animated.svg \
                       --write-out '%{http_code}' \
-                      "$CANONICAL_URL/?user=fuwadog&type=svg")"
+                      --get \
+                      --data-urlencode "user=$PRODUCTION_USER" \
+                      --data-urlencode "type=svg" \
+                      --data-urlencode "animation=true" \
+                      "$CANONICAL_URL/")"
                   test "$status" = "200"
-                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-fuwadog.headers
-                  grep -Eiq '^cache-control: public, max-age=[0-9]+' /tmp/streak-fuwadog.headers
-                  grep -Fq "<svg" /tmp/streak-fuwadog.svg
+                  grep -Fq "<svg" /tmp/streak-animated.svg
+                  grep -Fq "animation:" /tmp/streak-animated.svg
+                  grep -Fq "@keyframes" /tmp/streak-animated.svg
 
             - name: Assert canonical denied user is not exposed
               run: |
@@ -73,7 +104,10 @@ jobs:
                        --dump-header /tmp/streak-denied.headers \
                        --output /tmp/streak-denied.body \
                        --write-out '%{http_code}' \
-                       "$CANONICAL_URL/?user=$DENIED_USER&type=svg")"
+                       --get \
+                       --data-urlencode "user=$DENIED_USER" \
+                       --data-urlencode "type=svg" \
+                       "$CANONICAL_URL/")"
                    test "$status" = "403"
                    grep -Fq "User not in whitelist" /tmp/streak-denied.body
                    grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-denied.headers
@@ -123,47 +157,63 @@ jobs:
                    fi
 
             - name: Assert SVG response
+              if: ${{ inputs.production_user != '' }}
               run: |
                   set -euo pipefail
                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
                       --dump-header /tmp/streak-svg.headers \
                       --output /tmp/streak-svg.body \
                       --write-out '%{http_code}' \
-                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=svg")"
+                      --get \
+                      --data-urlencode "user=$PRODUCTION_USER" \
+                      --data-urlencode "type=svg" \
+                      "$CANONICAL_URL/")"
                   test "$status" = "200"
                   grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-svg.headers
                   grep -Fq "<svg" /tmp/streak-svg.body
 
             - name: Assert JSON response
+              if: ${{ inputs.production_user != '' }}
               run: |
                   set -euo pipefail
                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
                       --dump-header /tmp/streak-json.headers \
                       --output /tmp/streak-json.body \
                       --write-out '%{http_code}' \
-                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=json")"
+                      --get \
+                      --data-urlencode "user=$PRODUCTION_USER" \
+                      --data-urlencode "type=json" \
+                      "$CANONICAL_URL/")"
                   test "$status" = "200"
                   grep -Eiq '^content-type: application/json' /tmp/streak-json.headers
                   jq -e 'type == "object" and has("mode")' /tmp/streak-json.body >/dev/null
 
             - name: Assert PNG response contract
+              if: ${{ inputs.production_user != '' }}
               run: |
                   set -euo pipefail
                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
                       --dump-header /tmp/streak-png.headers \
                       --output /tmp/streak-png.body \
                       --write-out '%{http_code}' \
-                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=png")"
+                      --get \
+                      --data-urlencode "user=$PRODUCTION_USER" \
+                      --data-urlencode "type=png" \
+                      "$CANONICAL_URL/")"
                   if [ "$status" = "200" ]; then
                       grep -Eiq '^content-type: image/png' /tmp/streak-png.headers
                       test "$(file --brief --mime-type /tmp/streak-png.body)" = "image/png"
                   elif [ "$status" = "500" ]; then
                       # Vercel does not provide Inkscape; only the controlled fallback is acceptable.
-                      grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-png.headers
-                      grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-png.headers
-                      grep -Fq "PNG output is not supported on this platform" /tmp/streak-png.body
-                       if grep -Fq "renderer_unavailable" /tmp/streak-png.body; then
-                           echo "Forbidden renderer marker found in PNG response" >&2
+                      grep -Eiq '^content-type: image/svg\+xml(;[[:space:]]*charset=utf-8)?' /tmp/streak-png.headers
+                      grep -Fqi 'cache-control: no-cache, no-store, must-revalidate' /tmp/streak-png.headers
+                      xmllint --nonet --noout /tmp/streak-png.body
+                      test "$(xmllint --nonet --xpath 'local-name(/*)' /tmp/streak-png.body)" = "svg"
+                      test "$(xmllint --nonet --xpath 'count(/*[local-name()="svg"]//*[local-name()="text"])' /tmp/streak-png.body)" = "1"
+                      test "$(xmllint --nonet --xpath 'normalize-space(string((/*[local-name()="svg"]//*[local-name()="text"])[1]))' /tmp/streak-png.body)" = "PNG conversion failed. Please use type=svg instead."
+                       if grep -aEiq '<script|data:image/png|unix://|/run/|/tmp/|\.sock|renderer[_-]' /tmp/streak-png.body || \
+                           grep -aFq $'\x89PNG' /tmp/streak-png.body; then
+                           echo "Forbidden PNG, script, or renderer socket content found in PNG fallback" >&2
                            exit 1
                        else
                            grep_status=$?
@@ -179,7 +229,6 @@ jobs:
 
             - name: Start self-hosted smoke service
               env:
-                  TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   WHITELIST: DenverCoder1
                   CACHE_TTL_DEFAULT: "60"
               run: |

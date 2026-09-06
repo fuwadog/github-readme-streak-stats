@@ -58,7 +58,7 @@ COPY tests/ ./tests/
 COPY scripts/ ./scripts/
 COPY docs/ ./docs/
 COPY .github/ ./.github/
-COPY README.md CONTRIBUTING.md CODE_OF_CONDUCT.md .editorconfig vercel.json ./
+COPY README.md CONTRIBUTING.md CODE_OF_CONDUCT.md .editorconfig .env.example vercel.json ./
 
 RUN npm ci --ignore-scripts \
     && apt-get update \

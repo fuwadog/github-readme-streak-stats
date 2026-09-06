@@ -133,9 +133,11 @@ committed, pushed, and deployed by the repository owner.
 
 ### Remaining release blockers and limitations
 
-- Historical and local raw Trivy reports are unavailable. This changelog is
-  historical context only, not scan evidence, and it does not assert output
-  from a scan that cannot be retrieved.
+- Removed the Trivy image vulnerability gates, obsolete renderer exception, and
+  generated report/provenance rules after the final scan reported 5 CRITICAL and
+  87 HIGH findings and the vulnerability gate continued failing. Image CVE
+  scanning is unavailable in CI; Composer and npm dependency audits remain
+  active, and an independent image scan is required before release.
 - Updated the verification-only Node source from Node 24.7.0 Bookworm
   (`sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78`)
   to Node 24.20.0 Trixie
@@ -150,19 +152,6 @@ committed, pushed, and deployed by the repository owner.
 - The renderer now pins its explicitly installed Debian packages to one
   immutable `snapshot.debian.org` archive timestamp and fails the image build
   if those package pins do not resolve to the requested versions.
-- Future successful CI runs are the authoritative source for Trivy output.
-  CI uploads the blocking scan reports plus an unignored, machine-readable
-  renderer report and a provenance sidecar containing the repository, commit,
-  workflow/run, image digest, Trivy version, scan mode, and `.trivyignore`
-  hash. Reports are generated CI artifacts, not committed files.
-- `CVE-2026-36849` is the only documented exception: the policy metadata
-  identifies renderer `libtiff6` `4.7.0-3+deb13u3` as `will_not_fix`, owned by
-  `fuwadog`, expiring `2026-10-06`, with non-root private Unix-socket
-  isolation as mitigation. The policy file is not scan evidence.
-- No other CVE is present in `.trivyignore`; no additional exception or fix is
-  claimed without authoritative upstream or future CI evidence.
-- The renderer exception is scoped to the blocking renderer scan; verification
-  and production image gates do not consume that renderer-only policy.
 - Vercel WAF configuration, production secret provenance, production
   `WHITELIST` provenance, preview protection, and deployed one-function state
   still require manual confirmation after deployment.

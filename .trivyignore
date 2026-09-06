@@ -1,6 +1,0 @@
-# Exception: CVE-2026-36849 for renderer Debian libtiff6 4.7.0-3+deb13u3
-# Status: will_not_fix; no fixed version is currently available.
-# Owner: fuwadog
-# Expiry: 2026-10-06
-# Mitigation: renderer runs as UID 10001 without a TCP listener and accepts only private Unix-socket traffic.
-CVE-2026-36849

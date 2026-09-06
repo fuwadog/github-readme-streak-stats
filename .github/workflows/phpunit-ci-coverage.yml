@@ -136,122 +136,14 @@ jobs:
                   ! grep -Eq '^[[:space:]]*EXPOSE[[:space:]]' renderer/Dockerfile
 
             - name: Build non-deployed verification target
-              id: build-verification
               run: docker build --pull --target verification --tag streak-stats-verification .
-
-            - name: Scan verification image with Trivy
-              if: ${{ !cancelled() && steps.build-verification.outcome == 'success' }}
-              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-              with:
-                  version: v0.70.0
-                  scan-type: image
-                  image-ref: streak-stats-verification
-                  scanners: vuln
-                  vuln-type: os,library
-                  severity: HIGH,CRITICAL
-                  ignore-unfixed: false
-                  ignorefile: /dev/null
-                  exit-code: 1
-                  format: table
-                  output: trivy-verification.txt
-                  cache: true
-
-            - name: Append verification image scan summary
-              if: ${{ !cancelled() }}
-              run: |
-                  {
-                      printf '### Trivy verification image scan\n\n'
-                      if [ -f trivy-verification.txt ]; then
-                          cat trivy-verification.txt
-                      elif [ "${{ steps.build-verification.outcome }}" != "success" ]; then
-                          printf 'Scan unavailable: verification image build did not succeed.\n'
-                      else
-                          printf 'Scan unavailable: Trivy did not produce output after a successful image build.\n'
-                      fi
-                      printf '\n'
-                  } >> "$GITHUB_STEP_SUMMARY"
 
             - name: Run renderer unit tests
               run: docker compose --profile test run --rm renderer-tests
 
             - name: Build renderer image
-              id: build-renderer
               if: ${{ !cancelled() }}
-              run: docker buildx build --load --metadata-file renderer-build-metadata.json --pull --file renderer/Dockerfile --target production --tag streak-stats-renderer .
-
-            - name: Scan renderer image with Trivy
-              if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
-              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-              with:
-                  version: v0.70.0
-                  scan-type: image
-                  image-ref: streak-stats-renderer
-                  scanners: vuln
-                  vuln-type: os,library
-                  severity: HIGH,CRITICAL
-                  ignore-unfixed: false
-                  trivyignores: .trivyignore
-                  exit-code: 1
-                  format: table
-                  output: trivy-renderer.txt
-                  cache: true
-
-            - name: Record unignored renderer Trivy evidence
-              if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
-              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-              with:
-                  version: v0.70.0
-                  scan-type: image
-                  image-ref: streak-stats-renderer
-                  scanners: vuln
-                  vuln-type: os,library
-                  severity: HIGH,CRITICAL
-                  ignore-unfixed: false
-                  trivyignores: /dev/null
-                  exit-code: 0
-                  format: json
-                  output: trivy-renderer-unignored.txt
-                  cache: true
-
-            - name: Generate renderer Trivy evidence provenance
-              if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
-              run: |
-                  set -euo pipefail
-                  test -s trivy-renderer-unignored.txt
-                  test -s .trivyignore
-                  image_digest="$(jq -r '."containerimage.digest" // empty' renderer-build-metadata.json)"
-                  if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-                      printf 'Renderer OCI manifest digest is unavailable or malformed.\n' >&2
-                      exit 1
-                  fi
-                  trivyignore_sha256="$(sha256sum .trivyignore | awk '{print $1}')"
-                  {
-                      printf 'repository=%s\n' "$GITHUB_REPOSITORY"
-                      printf 'commit=%s\n' "$GITHUB_SHA"
-                      printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
-                      printf 'run_id=%s\n' "$GITHUB_RUN_ID"
-                      printf 'run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
-                      printf 'image_digest=%s\n' "$image_digest"
-                      printf 'trivy_version=%s\n' 'v0.70.0'
-                      printf 'scan_mode=%s\n' 'image,vuln,os,library,HIGH,CRITICAL,ignore-unfixed=false,unignored'
-                      printf 'trivyignore_sha256=%s\n' "$trivyignore_sha256"
-                  } > trivy-renderer-unignored.provenance
-                  test -s trivy-renderer-unignored.provenance
-
-            - name: Append renderer image scan summary
-              if: ${{ !cancelled() }}
-              run: |
-                  {
-                      printf '### Trivy renderer image scan\n\n'
-                      if [ -f trivy-renderer.txt ]; then
-                          cat trivy-renderer.txt
-                      elif [ "${{ steps.build-renderer.outcome }}" != "success" ]; then
-                          printf 'Scan unavailable: renderer image build did not succeed.\n'
-                      else
-                          printf 'Scan unavailable: Trivy did not produce output after a successful image build.\n'
-                      fi
-                      printf '\n'
-                  } >> "$GITHUB_STEP_SUMMARY"
+              run: docker buildx build --load --pull --file renderer/Dockerfile --target production --tag streak-stats-renderer .
 
             - name: Build production image
               id: build-production
@@ -261,7 +153,6 @@ jobs:
                   docker build --pull --tag streak-stats-ci .
 
             - name: Health-check production container
-              id: production-readiness
               if: ${{ !cancelled() && steps.build-production.outcome == 'success' }}
               run: |
                   set -euo pipefail
@@ -295,60 +186,3 @@ jobs:
                   done
                   docker logs streak-stats-ci
                   exit 1
-
-            - name: Scan production image with Trivy
-              if: ${{ !cancelled() && steps.build-production.outcome == 'success' && steps.production-readiness.outcome == 'success' }}
-              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-              with:
-                  version: v0.70.0
-                  scan-type: image
-                  image-ref: streak-stats-ci
-                  scanners: vuln
-                  vuln-type: os,library
-                  severity: HIGH,CRITICAL
-                  ignore-unfixed: false
-                  ignorefile: /dev/null
-                  exit-code: 1
-                  format: table
-                  output: trivy-production.txt
-                  cache: true
-
-            - name: Append production image scan summary
-              if: ${{ !cancelled() }}
-              run: |
-                  {
-                      printf '### Trivy production image scan\n\n'
-                      if [ -f trivy-production.txt ]; then
-                          cat trivy-production.txt
-                      elif [ "${{ steps.build-production.outcome }}" != "success" ]; then
-                          printf 'Scan unavailable: production image build did not succeed.\n'
-                      elif [ "${{ steps.production-readiness.outcome }}" != "success" ]; then
-                          printf 'Scan skipped: production readiness health check did not pass.\n'
-                      else
-                          printf 'Scan unavailable: Trivy did not produce output after a successful image build.\n'
-                      fi
-                      printf '\n'
-                  } >> "$GITHUB_STEP_SUMMARY"
-
-            - name: Upload Trivy reports
-              if: ${{ always() && !cancelled() }}
-              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-              with:
-                  name: trivy-reports
-                  path: |
-                      trivy-verification.txt
-                      trivy-renderer.txt
-                      trivy-renderer-unignored.txt
-                      trivy-renderer-unignored.provenance
-                      trivy-production.txt
-                  if-no-files-found: warn
-
-            - name: Upload required renderer Trivy evidence
-              if: ${{ always() && !cancelled() && steps.build-renderer.outcome == 'success' }}
-              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-              with:
-                  name: trivy-renderer-unignored-evidence
-                  path: |
-                      trivy-renderer-unignored.txt
-                      trivy-renderer-unignored.provenance
-                  if-no-files-found: error

@@ -133,12 +133,34 @@ committed, pushed, and deployed by the repository owner.
 
 ### Remaining release blockers and limitations
 
-- Pinned Trivy v0.70.0 scans the verification, renderer, and production images
-  locally with read-only repository permissions and no Docker or registry
-  credentials. It remains an unsuppressed release blocker for unresolved
-  critical/high findings, including `CVE-2026-85091` and `CVE-2026-86140` in
-  the production image and OpenSSL/TIFF findings in the renderer image.
-- No CVE was suppressed, bypassed, or claimed fixed without upstream evidence.
+- Historical and local raw Trivy reports are unavailable. This changelog is
+  historical context only, not scan evidence, and it does not assert output
+  from a scan that cannot be retrieved.
+- Updated the verification-only Node source from Node 24.7.0 Bookworm
+  (`sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78`)
+  to Node 24.20.0 Trixie
+  (`sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0`),
+  and removed its build-only bundled npm tree after verification. No direct
+  npm dependency required a bump, so `package.json` and `package-lock.json`
+  were intentionally unchanged.
+- Updated the Composer binary source to the current verified `2-bin` digest
+  (`sha256:536116acd18cd2d99d0351c1dfded22c83f34cef481d83f2747ff2cbca7587cd`).
+  The PHP 8.4 Apache Trixie digest was already current and had no affected
+  PHP package finding, so it was intentionally unchanged.
+- The renderer now pins its explicitly installed Debian packages to one
+  immutable `snapshot.debian.org` archive timestamp and fails the image build
+  if those package pins do not resolve to the requested versions.
+- Future successful CI runs are the authoritative source for Trivy output.
+  CI uploads the blocking scan reports plus an unignored, machine-readable
+  renderer report and a provenance sidecar containing the repository, commit,
+  workflow/run, image digest, Trivy version, scan mode, and `.trivyignore`
+  hash. Reports are generated CI artifacts, not committed files.
+- `CVE-2026-36849` is the only documented exception: the policy metadata
+  identifies renderer `libtiff6` `4.7.0-3+deb13u3` as `will_not_fix`, owned by
+  `fuwadog`, expiring `2026-10-06`, with non-root private Unix-socket
+  isolation as mitigation. The policy file is not scan evidence.
+- No other CVE is present in `.trivyignore`; no additional exception or fix is
+  claimed without authoritative upstream or future CI evidence.
 - Vercel WAF configuration, production secret provenance, production
   `WHITELIST` provenance, preview protection, and deployed one-function state
   still require manual confirmation after deployment.

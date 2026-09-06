@@ -150,6 +150,7 @@ jobs:
                   vuln-type: os,library
                   severity: HIGH,CRITICAL
                   ignore-unfixed: false
+                  trivyignores: .trivyignore
                   exit-code: 1
                   format: table
                   output: trivy-verification.txt
@@ -189,10 +190,48 @@ jobs:
                   vuln-type: os,library
                   severity: HIGH,CRITICAL
                   ignore-unfixed: false
+                  trivyignores: .trivyignore
                   exit-code: 1
                   format: table
                   output: trivy-renderer.txt
                   cache: true
+
+            - name: Record unignored renderer Trivy evidence
+              if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
+              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+              with:
+                  version: v0.70.0
+                  scan-type: image
+                  image-ref: streak-stats-renderer
+                  scanners: vuln
+                  vuln-type: os,library
+                  severity: HIGH,CRITICAL
+                  ignore-unfixed: false
+                  exit-code: 0
+                  format: json
+                  output: trivy-renderer-unignored.txt
+                  cache: true
+
+            - name: Generate renderer Trivy evidence provenance
+              if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
+              run: |
+                  set -euo pipefail
+                  test -s trivy-renderer-unignored.txt
+                  test -s .trivyignore
+                  image_digest="$(docker image inspect streak-stats-renderer --format '{{.Id}}')"
+                  trivyignore_sha256="$(sha256sum .trivyignore | awk '{print $1}')"
+                  {
+                      printf 'repository=%s\n' "$GITHUB_REPOSITORY"
+                      printf 'commit=%s\n' "$GITHUB_SHA"
+                      printf 'workflow=%s\n' "$GITHUB_WORKFLOW"
+                      printf 'run_id=%s\n' "$GITHUB_RUN_ID"
+                      printf 'run_attempt=%s\n' "$GITHUB_RUN_ATTEMPT"
+                      printf 'image_digest=%s\n' "$image_digest"
+                      printf 'trivy_version=%s\n' 'v0.70.0'
+                      printf 'scan_mode=%s\n' 'image,vuln,os,library,HIGH,CRITICAL,ignore-unfixed=false,unignored'
+                      printf 'trivyignore_sha256=%s\n' "$trivyignore_sha256"
+                  } > trivy-renderer-unignored.provenance
+                  test -s trivy-renderer-unignored.provenance
 
             - name: Append renderer image scan summary
               if: ${{ !cancelled() }}
@@ -263,6 +302,7 @@ jobs:
                   vuln-type: os,library
                   severity: HIGH,CRITICAL
                   ignore-unfixed: false
+                  trivyignores: .trivyignore
                   exit-code: 1
                   format: table
                   output: trivy-production.txt
@@ -284,3 +324,26 @@ jobs:
                       fi
                       printf '\n'
                   } >> "$GITHUB_STEP_SUMMARY"
+
+            - name: Upload Trivy reports
+              if: ${{ always() && !cancelled() }}
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+              with:
+                  name: trivy-reports
+                  path: |
+                      trivy-verification.txt
+                      trivy-renderer.txt
+                      trivy-renderer-unignored.txt
+                      trivy-renderer-unignored.provenance
+                      trivy-production.txt
+                  if-no-files-found: warn
+
+            - name: Upload required renderer Trivy evidence
+              if: ${{ always() && !cancelled() && steps.build-renderer.outcome == 'success' }}
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+              with:
+                  name: trivy-renderer-unignored-evidence
+                  path: |
+                      trivy-renderer-unignored.txt
+                      trivy-renderer-unignored.provenance
+                  if-no-files-found: error

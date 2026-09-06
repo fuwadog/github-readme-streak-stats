@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Use PHP 8.4 on the supported Debian Trixie base.
-FROM docker.io/library/node:24.7.0-bookworm-slim@sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78 AS verification-node
+FROM docker.io/library/node:24.20.0-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0 AS verification-node
 
 FROM php:8.4-apache-trixie@sha256:51da594c844a97f31b1cd6b1ac6660982f40788f4fe13e75f7fd39e2f9b58651 AS runtime-base
 
@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libc6=2.41-12+deb13u3 \
     libc-bin=2.41-12+deb13u3 \
     libc-dev-bin=2.41-12+deb13u3 \
+    linux-libc-dev=6.12.107-1 \
     libexpat1=2.8.3-1~deb13u1 \
     dpkg=1.22.22 \
     libpam0g=1.7.0-5 \
@@ -39,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Composer in the shared build base.
-COPY --from=composer/composer:2-bin@sha256:c9bda63056674836406cacfbbdd8ef770fb4692ac419c967034225213c64e11b /composer /usr/bin/composer
+COPY --from=composer/composer:2-bin@sha256:536116acd18cd2d99d0351c1dfded22c83f34cef481d83f2747ff2cbca7587cd /composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www/html
@@ -71,6 +72,13 @@ RUN npm ci --ignore-scripts \
 
 RUN composer install --no-interaction --prefer-dist --no-progress --no-scripts \
     && composer check
+
+# npm is required only while building the verification image. Remove its
+# bundled dependency tree before the image is scanned and retained.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    /usr/local/bin/corepack
 
 # Default/deployable production target.
 FROM runtime-base AS production

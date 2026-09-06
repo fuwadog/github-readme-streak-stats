@@ -1,51 +1,40 @@
 name: Format with Prettier
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    paths:
-      - "**.php"
-      - "**.md"
-      - "**.js"
-      - "**.css"
-      - ".github/workflows/prettier.yml"
+    push:
+        branches:
+            - main
+    pull_request:
+        paths:
+            - "**.php"
+            - "**.md"
+            - "**.js"
+            - "**.css"
+            - "package.json"
+            - "package-lock.json"
+            - ".prettierrc.js"
+            - ".prettierignore"
+            - ".editorconfig"
+            - ".github/workflows/prettier.yml"
+
+permissions:
+    contents: read
 
 jobs:
-  prettier:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Pull Request
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@v3
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+    prettier:
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Checkout Push
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/checkout@v3
+            - name: Setup Node.js
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+              with:
+                  node-version: 24.7.0
+                  cache: npm
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '22'
+            - name: Install locked formatter dependencies
+              run: npm ci --ignore-scripts
 
-      - name: Install prettier and plugin-php
-        run: npm i
-
-      - name: Lint with Prettier
-        continue-on-error: true
-        run: composer lint
-
-      - name: Prettify code
-        run: |
-          composer lint-fix
-          git diff
-
-      - name: Commit changes
-        uses: EndBug/add-and-commit@v9
-        with:
-          message: "style: Formatted code with Prettier"
-          default_author: github_actions
+            - name: Check formatting
+              run: npx --no-install prettier --check "**/*.{php,md,js,css}"

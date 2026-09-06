@@ -1,29 +1,217 @@
 name: Automated Releases
 
 on:
-  workflow_dispatch:
+    workflow_dispatch:
+        inputs:
+            force-release:
+                description: Create a release even when no conventional changes are found
+                required: false
+                default: false
+                type: boolean
+    workflow_call:
+        inputs:
+            force-release:
+                required: false
+                default: false
+                type: boolean
+
+permissions:
+    contents: read
+
+concurrency:
+    group: release
+    cancel-in-progress: false
 
 jobs:
-  changelog:
-    runs-on: ubuntu-latest
+    verify:
+        name: Pre-release verification
+        runs-on: ubuntu-24.04
+        permissions:
+            contents: read
+            id-token: write
+            attestations: write
+        outputs:
+            source_digest: ${{ steps.source_digest.outputs.sha256 }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+              with:
+                  ref: ${{ github.sha }}
 
-    steps:
-      - uses: actions/checkout@v3
+            - name: Verify source ref and metadata
+              env:
+                  EXPECTED_SHA: ${{ github.sha }}
+              run: |
+                  set -euo pipefail
+                  test "$GITHUB_REF" = "refs/heads/main"
+                  test "$GITHUB_REF_PROTECTED" = "true"
+                  test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+                  test "$(git rev-parse --verify HEAD^0)" = "$EXPECTED_SHA"
+                  origin="$(git remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##')"
+                  test "$origin" = "$GITHUB_REPOSITORY"
 
-      - name: conventional Changelog Action
-        id: changelog
-        uses: TriPSs/conventional-changelog-action@v3.7.1
-        with:
-          github-token: ${{ secrets.CHANGELOG_RELEASE }}
-          version-file: './composer.json'
-          output-file: 'false'
+            - name: Authorize force release actor
+              if: ${{ inputs.force-release == true }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -euo pipefail
+                  permission="$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" --jq .permission)"
+                  case "$permission" in
+                      admin|maintain) ;;
+                      *)
+                          echo "::error::actor $GITHUB_ACTOR is not authorized for force release"
+                          exit 1
+                          ;;
+                  esac
 
-      - name: create release
-        uses: actions/create-release@v1
-        if: ${{ steps.changelog.outputs.skipped == 'false' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.CHANGELOG_RELEASE }}
-        with:
-          tag_name: ${{ steps.changelog.outputs.tag }}
-          release_name: ${{ steps.changelog.outputs.tag }}
-          body: ${{ steps.changelog.outputs.clean_changelog }}
+            - name: Set up PHP
+              uses: shivammathur/setup-php@c482204203a2eb89366ad513842766b70efaaee8 # v2
+              with:
+                  php-version: 8.2.29
+                  extensions: curl, intl, mbstring, dom, xml, xmlwriter
+                  coverage: pcov
+
+            - name: Verify PHP extensions
+              run: |
+                  php -m | grep -qx curl
+                  php -m | grep -qx intl
+                  php -m | grep -qx mbstring
+                  php -m | grep -qx dom
+                  php -m | grep -qx xml
+                  php -m | grep -qx xmlwriter
+
+            - name: Install Composer dependencies
+              run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-plugins
+
+            - name: Validate and audit Composer dependencies
+              run: |
+                  composer validate --strict --no-check-publish
+                  composer audit --locked --no-interaction
+
+            - name: Set up Node.js
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+              with:
+                  node-version: 24.7.0
+                  cache: npm
+
+            - name: Install formatter dependencies
+              run: npm ci --ignore-scripts
+
+            - name: Audit npm dependencies
+              run: npm audit --audit-level=high
+
+            - name: Run all validation gates
+              run: composer check
+
+            - name: Create attested source artifact
+              run: |
+                  git archive --format=tar.gz --prefix=source/ "$GITHUB_SHA" > release-source.tar.gz
+                  sha256sum release-source.tar.gz > release-source.tar.gz.sha256
+
+            - name: Record source artifact digest
+              id: source_digest
+              run: echo "sha256=$(cut -d ' ' -f 1 release-source.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+
+            - name: Upload source artifact
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+              with:
+                  name: release-source
+                  path: |
+                      release-source.tar.gz
+                      release-source.tar.gz.sha256
+                  if-no-files-found: error
+
+            - name: Attest source artifact
+              uses: actions/attest-build-provenance@c074443f1aee8d4aeeae555aebba3282517141b2 # v2.2.3
+              with:
+                  subject-path: release-source.tar.gz
+
+    changelog:
+        needs: verify
+        runs-on: ubuntu-24.04
+        permissions:
+            contents: read
+        outputs:
+            skipped: ${{ steps.changelog.outputs.skipped }}
+            tag: ${{ steps.changelog.outputs.tag }}
+            body: ${{ steps.changelog.outputs.clean_changelog }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+              with:
+                  fetch-depth: 0
+                  ref: ${{ github.sha }}
+
+            - name: Verify changelog source metadata
+              run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+            - name: Generate changelog
+              id: changelog
+              uses: TriPSs/conventional-changelog-action@452d1791d4699bb2c0cde93b703675f2c4619175 # v6.1.0
+              with:
+                  github-token: ${{ github.token }}
+                  version-file: "./composer.json"
+                  output-file: "false"
+                  skip-on-empty: ${{ inputs.force-release != true }}
+                  skip-git-pull: true
+                  skip-version-file: true
+                  skip-commit: true
+
+            - name: Verify release metadata
+              if: ${{ steps.changelog.outputs.skipped == 'false' }}
+              env:
+                  RELEASE_TAG: ${{ steps.changelog.outputs.tag }}
+              run: |
+                  set -euo pipefail
+                  test -n "$RELEASE_TAG"
+                  git check-ref-format "refs/tags/$RELEASE_TAG"
+                  if git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG"; then
+                      echo "::error::release tag already exists: $RELEASE_TAG"
+                      exit 1
+                  fi
+
+    publish:
+        needs: [verify, changelog]
+        if: ${{ needs.changelog.outputs.skipped == 'false' }}
+        runs-on: ubuntu-24.04
+        environment: release
+        permissions:
+            contents: write
+            actions: read
+            attestations: read
+        steps:
+            - name: Download verified source artifact
+              uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+              with:
+                  name: release-source
+                  run-id: ${{ github.run_id }}
+
+            - name: Verify artifact digest and provenance
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  EXPECTED_DIGEST: ${{ needs.verify.outputs.source_digest }}
+                  RELEASE_TAG: ${{ needs.changelog.outputs.tag }}
+              run: |
+                  set -euo pipefail
+                  test "$(sha256sum release-source.tar.gz | cut -d ' ' -f 1)" = "$EXPECTED_DIGEST"
+                  test "$(cut -d ' ' -f 1 release-source.tar.gz.sha256)" = "$EXPECTED_DIGEST"
+                  test -n "$RELEASE_TAG"
+                  git check-ref-format "refs/tags/$RELEASE_TAG"
+                  if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+                      echo "::error::release tag already exists: $RELEASE_TAG"
+                      exit 1
+                  fi
+                  gh attestation verify release-source.tar.gz --repo "$GITHUB_REPOSITORY" \
+                      --signer-workflow .github/workflows/release.yml
+
+            - name: Create release
+              uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+              with:
+                  tag_name: ${{ needs.changelog.outputs.tag }}
+                  name: ${{ needs.changelog.outputs.tag }}
+                  body: ${{ needs.changelog.outputs.body }}
+                  target_commitish: ${{ github.sha }}

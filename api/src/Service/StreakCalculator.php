@@ -17,19 +17,28 @@ class StreakCalculator
         $contributions = [];
         $today = date("Y-m-d");
         $tomorrow = date("Y-m-d", strtotime("tomorrow"));
-        ksort($contributionGraphs);
+        ksort($contributionGraphs, SORT_NUMERIC);
         foreach ($contributionGraphs as $graph) {
-            $weeks = $graph->data->user->contributionsCollection->contributionCalendar->weeks;
+            $weeks = is_object($graph)
+                ? $graph->data?->user?->contributionsCollection?->contributionCalendar?->weeks ?? null
+                : null;
+            if (!is_array($weeks) && !is_object($weeks)) {
+                throw new \RuntimeException("GitHub returned an invalid contribution calendar.", 502);
+            }
             foreach ($weeks as $week) {
                 foreach ($week->contributionDays as $day) {
+                    if (!is_object($day) || !isset($day->date, $day->contributionCount)) {
+                        throw new \RuntimeException("GitHub returned an invalid contribution day.", 502);
+                    }
                     $date = $day->date;
                     $count = $day->contributionCount;
                     if ($date <= $today || ($date == $tomorrow && $count > 0)) {
-                        $contributions[$date] = $count;
+                        $contributions[$date] = ($contributions[$date] ?? 0) + $count;
                     }
                 }
             }
         }
+        ksort($contributions, SORT_STRING);
         return $contributions;
     }
 
@@ -74,6 +83,7 @@ class StreakCalculator
      */
     public function getContributionStats(array $contributions, array $excludedDays = []): array
     {
+        ksort($contributions, SORT_STRING);
         if (empty($contributions)) {
             throw new \RuntimeException("No contributions found.", 204);
         }
@@ -141,6 +151,7 @@ class StreakCalculator
      */
     public function getWeeklyContributionStats(array $contributions): array
     {
+        ksort($contributions, SORT_STRING);
         if (empty($contributions)) {
             throw new \RuntimeException("No contributions found.", 204);
         }

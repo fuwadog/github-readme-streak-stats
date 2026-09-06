@@ -6,6 +6,54 @@ namespace App\Client;
 
 class GitHubClient
 {
+    private const MAX_ATTEMPTS = 100;
+    private const MAX_RETRIES_PER_REQUEST = 1;
+    private const VERCEL_HOBBY_MAX_DURATION_SECONDS = 10;
+    private const CLEANUP_MARGIN_SECONDS = 2;
+    private const REQUEST_DEADLINE_SECONDS = self::VERCEL_HOBBY_MAX_DURATION_SECONDS - self::CLEANUP_MARGIN_SECONDS;
+    private const MAX_MULTI_SELECT_MILLISECONDS = 250;
+    private const GRAPHQL_ENDPOINT = "https://api.github.com/graphql";
+
+    private array $tokens = [];
+    private array $redactionTokens = [];
+    private int $attemptsUsed = 0;
+    private ?int $deadlineNanoseconds = null;
+
+    public function __construct(?array $tokens = null)
+    {
+        if ($tokens === null) {
+            $tokens = [];
+            for ($index = 1; $index <= 100; $index++) {
+                $key = $index === 1 ? "TOKEN" : "TOKEN{$index}";
+                $value = $this->getEnvironmentValue($key);
+                if (is_string($value) && trim($value) !== "") {
+                    $tokens[] = trim($value);
+                }
+            }
+        }
+        $this->tokens = array_values(
+            array_unique(
+                array_filter(
+                    array_map(static fn(mixed $token): mixed => is_string($token) ? trim($token) : null, $tokens),
+                    static fn(mixed $token): bool => is_string($token) && $token !== "",
+                ),
+            ),
+        );
+        $this->redactionTokens = $this->tokens;
+    }
+
+    private function getEnvironmentValue(string $key): ?string
+    {
+        foreach ([$_SERVER, $_ENV] as $environment) {
+            $value = $environment[$key] ?? null;
+            if (is_string($value) && trim($value) !== "") {
+                return trim($value);
+            }
+        }
+
+        $value = getenv($key);
+        return is_string($value) && trim($value) !== "" ? trim($value) : null;
+    }
     /**
      * Sanitize sensitive data for logging by replacing tokens with [REDACTED]
      *
@@ -15,18 +63,156 @@ class GitHubClient
     private function sanitizeForLogging(string $message): string
     {
         $sanitized = $message;
-        if (isset($_ENV["TOKEN"])) {
-            $sanitized = str_replace($_ENV["TOKEN"], "[REDACTED]", $sanitized);
-        }
-        $index = 2;
-        while (isset($_ENV["TOKEN{$index}"])) {
-            $sanitized = str_replace($_ENV["TOKEN{$index}"], "[REDACTED]", $sanitized);
-            $index++;
+        foreach ($this->redactionTokens as $token) {
+            $sanitized = str_replace($token, "[REDACTED]", $sanitized);
         }
         if (strlen($sanitized) > 500) {
             $sanitized = substr($sanitized, 0, 500) . "... [truncated]";
         }
         return $sanitized;
+    }
+
+    private function isValidGraphQLResponse(mixed $decoded, int $httpCode): bool
+    {
+        return is_object($decoded) &&
+            is_object($decoded->data ?? null) &&
+            is_object($decoded->data->user ?? null) &&
+            empty($decoded->errors) &&
+            ($httpCode === 0 || ($httpCode >= 200 && $httpCode < 300));
+    }
+
+    private function getDiagnosticType(mixed $decoded, int $curlErrno): string
+    {
+        if ($curlErrno !== 0) {
+            return "transport";
+        }
+
+        $type = strtolower($this->getResponseErrorType($decoded));
+        return preg_match("/^[a-z0-9_.-]{1,32}$/", $type) === 1 ? $type : "upstream";
+    }
+
+    private function logRequestFailure(string $event, int $httpCode, mixed $decoded, int $curlErrno = 0): void
+    {
+        $status = $httpCode >= 100 && $httpCode <= 599 ? $httpCode : 0;
+        error_log(
+            "github_request_failed event={$event} status={$status} type=" .
+                $this->getDiagnosticType($decoded, $curlErrno),
+        );
+    }
+
+    private function getResponseErrorMessage(mixed $decoded): string
+    {
+        if (!is_object($decoded)) {
+            return "An API error occurred.";
+        }
+        $firstError = is_array($decoded->errors ?? null) ? $decoded->errors[0] ?? null : null;
+        if (is_object($firstError) && is_string($firstError->message ?? null)) {
+            return $firstError->message;
+        }
+        return is_string($decoded->message ?? null) ? $decoded->message : "An API error occurred.";
+    }
+
+    private function getResponseErrorType(mixed $decoded): string
+    {
+        if (!is_object($decoded) || !is_array($decoded->errors ?? null)) {
+            return "";
+        }
+        $firstError = $decoded->errors[0] ?? null;
+        return is_object($firstError) && is_string($firstError->type ?? null) ? $firstError->type : "";
+    }
+
+    private function consumeAttempt(): void
+    {
+        if ($this->attemptsUsed >= self::MAX_ATTEMPTS) {
+            throw new \RuntimeException("GitHub request attempt budget exhausted.", 503);
+        }
+        $this->getRemainingTimeoutMilliseconds();
+        ++$this->attemptsUsed;
+    }
+
+    private function getRemainingTimeoutMilliseconds(): int
+    {
+        $this->deadlineNanoseconds ??= hrtime(true) + self::REQUEST_DEADLINE_SECONDS * 1_000_000_000;
+        $remainingNanoseconds = $this->deadlineNanoseconds - hrtime(true);
+        if ($remainingNanoseconds <= 0) {
+            throw new \RuntimeException("GitHub request deadline exceeded.", 504);
+        }
+        return max(1, min(self::REQUEST_DEADLINE_SECONDS * 1_000, intdiv($remainingNanoseconds, 1_000_000)));
+    }
+
+    /**
+     * @return array{contents:string, decoded:mixed, curlErrno:int, httpCode:int, message:string}
+     */
+    private function readCurlResponse(
+        \CurlHandle $handle,
+        string $user,
+        int $year,
+        string $attemptLabel,
+        string|false|null $providedContents = null,
+    ): array {
+        $contents = $providedContents ?? curl_multi_getcontent($handle);
+        $curlErrno = curl_errno($handle);
+        $httpCode = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
+        if ($contents === false || $contents === "") {
+            $this->logRequestFailure("transport", $httpCode, null, $curlErrno);
+            $contents = "";
+        }
+        $decoded = $contents !== "" ? json_decode($contents) : null;
+        $message = $this->getResponseErrorMessage($decoded);
+        if ($curlErrno === 60) {
+            throw new \RuntimeException("You don't have a valid SSL Certificate installed or XAMPP.", 500);
+        }
+        if ($this->getResponseErrorType($decoded) === "NOT_FOUND") {
+            throw new \InvalidArgumentException("Could not find a user with that name.", 404);
+        }
+        if (!$this->isValidGraphQLResponse($decoded, $httpCode)) {
+            $this->logRequestFailure("response", $httpCode, $decoded, $curlErrno);
+        }
+        return [
+            "contents" => $contents,
+            "decoded" => $decoded,
+            "curlErrno" => $curlErrno,
+            "httpCode" => $httpCode,
+            "message" => $message,
+        ];
+    }
+
+    private function isUnauthorizedResponse(int $httpCode, mixed $decoded, string $message): bool
+    {
+        $errorType = strtoupper($this->getResponseErrorType($decoded));
+        return $httpCode === 401 ||
+            in_array($errorType, ["BAD_CREDENTIALS", "INVALID_TOKEN", "UNAUTHORIZED"], true) ||
+            stripos($message, "bad credentials") !== false;
+    }
+
+    private function handleTokenFailure(string $token, mixed $decoded, int $httpCode, string $message): void
+    {
+        if ($httpCode === 429 || stripos($message, "rate limit") !== false) {
+            $this->discardToken($token, "rate_limited");
+            return;
+        }
+        if ($this->isUnauthorizedResponse($httpCode, $decoded, $message)) {
+            $this->discardToken($token, "unauthorized");
+        }
+    }
+
+    private function discardToken(string $token, string $reason): void
+    {
+        $index = array_search($token, $this->tokens, true);
+        if ($index !== false) {
+            unset($this->tokens[$index]);
+            $this->tokens = array_values($this->tokens);
+        }
+        if ($this->tokens !== []) {
+            return;
+        }
+        if ($reason === "unauthorized") {
+            throw new \RuntimeException("All configured GitHub tokens were unauthorized.", 401);
+        }
+        throw new \RuntimeException(
+            "We are being rate-limited! Check <a href='https://git.io/streak-ratelimit' font-weight='bold'>git.io/streak-ratelimit</a> for details.",
+            429,
+        );
     }
 
     /**
@@ -38,12 +224,10 @@ class GitHubClient
      */
     public function buildContributionGraphQuery(string $user, int $year): string
     {
-        $start = "$year-01-01T00:00:00Z";
-        $end = "$year-12-31T23:59:59Z";
-        return "query {
-            user(login: \"$user\") {
+        return "query(\$login: String!, \$from: DateTime!, \$to: DateTime!) {
+            user(login: \$login) {
                 createdAt
-                contributionsCollection(from: \"$start\", to: \"$end\") {
+                contributionsCollection(from: \$from, to: \$to) {
                     contributionYears
                     contributionCalendar {
                         weeks {
@@ -67,89 +251,131 @@ class GitHubClient
      */
     public function executeContributionGraphRequests(string $user, array $years): array
     {
+        if (count($years) > self::MAX_ATTEMPTS) {
+            throw new \InvalidArgumentException("Too many contribution years requested.", 400);
+        }
+        if ($years === []) {
+            return [];
+        }
+        $this->deadlineNanoseconds ??= hrtime(true) + self::REQUEST_DEADLINE_SECONDS * 1_000_000_000;
+
         $tokens = [];
         $requests = [];
-        foreach ($years as $year) {
-            $tokens[$year] = $this->getGitHubToken();
-            $query = $this->buildContributionGraphQuery($user, $year);
-            $requests[$year] = $this->getGraphQLCurlHandle($query, $tokens[$year]);
-        }
         $multi = curl_multi_init();
-        foreach ($requests as $handle) {
-            curl_multi_add_handle($multi, $handle);
+        if ($multi === false) {
+            throw new \RuntimeException("Unable to initialize the GitHub request pool.", 500);
         }
-        $running = null;
-        do {
-            curl_multi_exec($multi, $running);
-            if ($running) {
-                curl_multi_select($multi, 1.0);
-            }
-        } while ($running);
-        $responses = [];
-        foreach ($requests as $year => $handle) {
-            $contents = curl_multi_getcontent($handle);
-            $curlError = curl_error($handle);
-            $curlErrno = curl_errno($handle);
-            $httpCode = curl_getinfo($handle, CURLINFO_HTTP_CODE);
-            if ($contents === false || $contents === "") {
-                error_log(
-                    "cURL failed for $user's $year contributions: errno=$curlErrno, error=$curlError, httpCode=$httpCode",
-                );
-                $contents = "";
-            }
-            $decoded = is_string($contents) && $contents !== "" ? json_decode($contents) : null;
-            if (!is_object($decoded) || empty($decoded->data) || !empty($decoded->errors)) {
-                $message = is_object($decoded)
-                    ? $decoded->errors[0]->message ?? ($decoded->message ?? "An API error occurred.")
-                    : "An API error occurred.";
-                $error_type = is_object($decoded) ? $decoded->errors[0]->type ?? "" : "";
-                if ($curlErrno === 60) {
-                    throw new \RuntimeException("You don't have a valid SSL Certificate installed or XAMPP.", 500);
-                } elseif ($curlErrno) {
-                    throw new \RuntimeException("cURL error ($curlErrno): $curlError", 500);
-                } elseif ($error_type === "NOT_FOUND") {
-                    throw new \InvalidArgumentException("Could not find a user with that name.", 404);
+
+        try {
+            foreach ($years as $year) {
+                if (!is_int($year)) {
+                    throw new \InvalidArgumentException("Contribution years must be integers.", 400);
                 }
-                if (str_contains($message, "rate limit exceeded")) {
-                    $this->removeGitHubToken($tokens[$year]);
-                }
-                $sanitizedContents = $this->sanitizeForLogging((string) ($contents ?? ""));
-                error_log("First attempt to decode response for $user's $year contributions failed. $message");
-                error_log("Contents: $sanitizedContents");
+                $tokens[$year] = $this->getGitHubToken();
+                $this->consumeAttempt();
                 $query = $this->buildContributionGraphQuery($user, $year);
-                $token = $this->getGitHubToken();
-                $request = $this->getGraphQLCurlHandle($query, $token);
-                $contents = curl_exec($request);
-                $retryCurlError = curl_error($request);
-                $retryCurlErrno = curl_errno($request);
-                $retryHttpCode = curl_getinfo($request, CURLINFO_HTTP_CODE);
-                if ($contents === false || $contents === "") {
-                    error_log(
-                        "Retry cURL failed for $user's $year contributions: errno=$retryCurlErrno, error=$retryCurlError, httpCode=$retryHttpCode",
-                    );
-                    $contents = "";
-                }
-                $decoded = is_string($contents) && $contents !== "" ? json_decode($contents) : null;
-                if (!is_object($decoded) || empty($decoded->data)) {
-                    $message = is_object($decoded)
-                        ? $decoded->errors[0]->message ?? ($decoded->message ?? "An API error occurred.")
-                        : "An API error occurred.";
-                    if (str_contains($message, "rate limit exceeded")) {
-                        $this->removeGitHubToken($token);
-                    }
-                    $sanitizedContents = $this->sanitizeForLogging((string) ($contents ?? ""));
-                    error_log("Failed to decode response for $user's $year contributions after 2 attempts. $message");
-                    error_log("Contents: $sanitizedContents");
-                    continue;
+                $requests[$year] = $this->getGraphQLCurlHandle($query, $tokens[$year], [
+                    "login" => $user,
+                    "from" => "$year-01-01T00:00:00Z",
+                    "to" => "$year-12-31T23:59:59Z",
+                ]);
+                if (curl_multi_add_handle($multi, $requests[$year]) !== CURLM_OK) {
+                    $handle = $requests[$year];
+                    unset($requests[$year]);
+                    curl_close($handle);
+                    throw new \RuntimeException("Unable to add a GitHub request to the request pool.", 502);
                 }
             }
-            $responses[$year] = $decoded;
+
+            $running = 0;
+            do {
+                $this->getRemainingTimeoutMilliseconds();
+                $multiStatus = curl_multi_exec($multi, $running);
+                if ($multiStatus !== CURLM_OK && $multiStatus !== CURLM_CALL_MULTI_PERFORM) {
+                    throw new \RuntimeException("GitHub request pool failed.", 502);
+                }
+                if ($running) {
+                    $selectTimeoutMilliseconds = min(
+                        self::MAX_MULTI_SELECT_MILLISECONDS,
+                        $this->getRemainingTimeoutMilliseconds(),
+                    );
+                    $selected = curl_multi_select($multi, $selectTimeoutMilliseconds / 1000);
+                    if ($selected === -1) {
+                        usleep(1_000);
+                    }
+                }
+            } while ($running);
+
+            $responses = [];
+            foreach ($requests as $year => $handle) {
+                $response = $this->readCurlResponse($handle, $user, (int) $year, "First attempt");
+                curl_multi_remove_handle($multi, $handle);
+                curl_close($handle);
+                unset($requests[$year]);
+
+                if (!$this->isValidGraphQLResponse($response["decoded"], $response["httpCode"])) {
+                    $this->handleTokenFailure(
+                        $tokens[$year],
+                        $response["decoded"],
+                        $response["httpCode"],
+                        $response["message"],
+                    );
+
+                    $retrySucceeded = false;
+                    for ($retryCount = 0; $retryCount < self::MAX_RETRIES_PER_REQUEST; ++$retryCount) {
+                        $retryToken = $this->getGitHubToken();
+                        $this->consumeAttempt();
+                        $retryHandle = null;
+                        try {
+                            $retryHandle = $this->getGraphQLCurlHandle(
+                                $this->buildContributionGraphQuery($user, (int) $year),
+                                $retryToken,
+                                [
+                                    "login" => $user,
+                                    "from" => "$year-01-01T00:00:00Z",
+                                    "to" => "$year-12-31T23:59:59Z",
+                                ],
+                            );
+                            $retryContents = curl_exec($retryHandle);
+                            $retryResponse = $this->readCurlResponse(
+                                $retryHandle,
+                                $user,
+                                (int) $year,
+                                "Retry",
+                                $retryContents,
+                            );
+                        } finally {
+                            if ($retryHandle instanceof \CurlHandle) {
+                                curl_close($retryHandle);
+                            }
+                        }
+
+                        if ($this->isValidGraphQLResponse($retryResponse["decoded"], $retryResponse["httpCode"])) {
+                            $response = $retryResponse;
+                            $retrySucceeded = true;
+                            break;
+                        }
+                        $this->handleTokenFailure(
+                            $retryToken,
+                            $retryResponse["decoded"],
+                            $retryResponse["httpCode"],
+                            $retryResponse["message"],
+                        );
+                    }
+                    if (!$retrySucceeded) {
+                        throw new \RuntimeException("Failed to retrieve contributions after retry.", 502);
+                    }
+                }
+                $responses[$year] = $response["decoded"];
+            }
+            return $responses;
+        } finally {
+            foreach ($requests as $request) {
+                curl_multi_remove_handle($multi, $request);
+                curl_close($request);
+            }
+            curl_multi_close($multi);
         }
-        foreach ($requests as $request) {
-            curl_multi_remove_handle($multi, $request);
-        }
-        curl_multi_close($multi);
-        return $responses;
     }
 
     /**
@@ -159,17 +385,14 @@ class GitHubClient
      */
     public function getGitHubTokens(): array
     {
-        if (isset($GLOBALS["ALL_TOKENS"])) {
-            return $GLOBALS["ALL_TOKENS"];
+        return $this->tokens;
+    }
+
+    public function validateCredentials(): void
+    {
+        if ($this->tokens === []) {
+            throw new \RuntimeException("There is no GitHub token available.", 500);
         }
-        $tokens = isset($_ENV["TOKEN"]) ? [$_ENV["TOKEN"]] : [];
-        $index = 2;
-        while (isset($_ENV["TOKEN{$index}"])) {
-            $tokens[] = $_ENV["TOKEN{$index}"];
-            $index++;
-        }
-        $GLOBALS["ALL_TOKENS"] = $tokens;
-        return $tokens;
     }
 
     /**
@@ -181,11 +404,11 @@ class GitHubClient
      */
     public function getGitHubToken(): string
     {
-        $all_tokens = $this->getGitHubTokens();
-        if (empty($all_tokens)) {
+        $allTokens = $this->getGitHubTokens();
+        if ($allTokens === []) {
             throw new \RuntimeException("There is no GitHub token available.", 500);
         }
-        return $all_tokens[array_rand($all_tokens)];
+        return $allTokens[array_rand($allTokens)];
     }
 
     /**
@@ -198,16 +421,7 @@ class GitHubClient
      */
     public function removeGitHubToken(string $token): void
     {
-        $index = array_search($token, $GLOBALS["ALL_TOKENS"]);
-        if ($index !== false) {
-            unset($GLOBALS["ALL_TOKENS"][$index]);
-        }
-        if (empty($GLOBALS["ALL_TOKENS"])) {
-            throw new \RuntimeException(
-                "We are being rate-limited! Check <a href='https://git.io/streak-ratelimit' font-weight='bold'>git.io/streak-ratelimit</a> for details.",
-                429,
-            );
-        }
+        $this->discardToken($token, "rate_limited");
     }
 
     /**
@@ -217,7 +431,7 @@ class GitHubClient
      * @param string $token GitHub token to use for the request
      * @return \CurlHandle The curl handle for the request
      */
-    public function getGraphQLCurlHandle(string $query, string $token): \CurlHandle
+    public function getGraphQLCurlHandle(string $query, string $token, array $variables = []): \CurlHandle
     {
         $headers = [
             "Authorization: bearer $token",
@@ -225,12 +439,17 @@ class GitHubClient
             "Accept: application/vnd.github.v4.idl",
             "User-Agent: GitHub-Readme-Streak-Stats",
         ];
-        $body = ["query" => $query];
+        $body = ["query" => $query, "variables" => $variables];
+        $encodedBody = json_encode($body, JSON_THROW_ON_ERROR);
+        $timeoutMilliseconds = $this->getRemainingTimeoutMilliseconds();
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://api.github.com/graphql");
+        if ($ch === false) {
+            throw new \RuntimeException("Unable to initialize a GitHub request.", 500);
+        }
+        curl_setopt($ch, CURLOPT_URL, self::GRAPHQL_ENDPOINT);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $encodedBody);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
@@ -239,10 +458,9 @@ class GitHubClient
         if (file_exists($caPath)) {
             curl_setopt($ch, CURLOPT_CAINFO, $caPath);
         }
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-        curl_setopt($ch, CURLOPT_VERBOSE, true);
-        curl_setopt($ch, CURLOPT_STDERR, fopen("php://temp", "w+"));
+        curl_setopt($ch, CURLOPT_TIMEOUT_MS, $timeoutMilliseconds);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, min(5_000, $timeoutMilliseconds));
+        curl_setopt($ch, CURLOPT_VERBOSE, false);
         return $ch;
     }
 }

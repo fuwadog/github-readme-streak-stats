@@ -1,37 +1,41 @@
 name: Update Translation Progress
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "api/translations.php"
-      - "scripts/translation-progress.php"
-      - ".github/workflows/translation-progress.yml"
-      - "README.md"
+    workflow_dispatch:
+    push:
+        branches:
+            - main
+        paths:
+            - "api/translations.php"
+            - "scripts/translation-progress.php"
+            - ".github/workflows/translation-progress.yml"
+            - "README.md"
 
-env:
-  PHP_VERSION: 8.2
+permissions:
+    contents: read
+
+concurrency:
+    group: translation-progress-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
-  build-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+    validate:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: php-actions/composer@v6
-        with:
-          php_extensions: intl
-          php_version: ${{ env.PHP_VERSION }}
-  
-      - name: Update Translations
-        run: php scripts/translation-progress.php
+            - name: Set up PHP
+              uses: shivammathur/setup-php@c482204203a2eb89366ad513842766b70efaaee8 # v2
+              with:
+                  php-version: 8.2
+                  extensions: curl, intl
 
-      - name: Commit Changes
-        uses: EndBug/add-and-commit@v7
-        with:
-          author_name: GitHub Actions
-          author_email: github-actions[bot]@users.noreply.github.com
-          message: "docs(readme): Update translation progress"
-          add: "README.md"
+            - name: Install locked dependencies
+              run: composer install --no-dev --no-interaction --prefer-dist --no-progress
+
+            - name: Generate translation progress
+              run: php -d date.timezone=UTC scripts/translation-progress.php
+
+            - name: Validate generated README
+              run: git diff --exit-code -- README.md

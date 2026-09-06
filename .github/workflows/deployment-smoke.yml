@@ -1,0 +1,348 @@
+name: Deployment smoke
+
+on:
+    workflow_dispatch:
+    push:
+        branches:
+            - main
+            - vercel
+    schedule:
+        - cron: "17 */6 * * *"
+
+permissions:
+    contents: read
+
+env:
+    CANONICAL_URL: https://github-readme-streak-stats-black-phi.vercel.app
+    ALLOWED_USER: fuwadog
+    SELF_HOSTED_ALLOWED_USER: DenverCoder1
+    DENIED_USER: streak-smoke-denied-user
+    SELF_HOSTED_URL: http://127.0.0.1:8080
+
+jobs:
+    smoke:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+            - name: Assert canonical HTTPS and root route
+              run: |
+                  set -euo pipefail
+                  case "$CANONICAL_URL" in
+                      https://*) ;;
+                      *) echo "Canonical deployment URL must use HTTPS" >&2; exit 1 ;;
+                  esac
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --output /tmp/streak-root.svg \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/?user=$ALLOWED_USER")"
+                  test "$status" = "200"
+                  grep -Fq "<svg" /tmp/streak-root.svg
+
+            - name: Assert canonical listed user and cache headers
+              run: |
+                  set -euo pipefail
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --dump-header /tmp/streak-listed.headers \
+                      --output /tmp/streak-listed.svg \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=svg")"
+                  test "$status" = "200"
+                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-listed.headers
+                  grep -Eiq '^cache-control: public, max-age=[0-9]+' /tmp/streak-listed.headers
+                  grep -Fq "<svg" /tmp/streak-listed.svg
+
+            - name: Assert canonical fuwadog whitelist entry
+              run: |
+                  set -euo pipefail
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --dump-header /tmp/streak-fuwadog.headers \
+                      --output /tmp/streak-fuwadog.svg \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/?user=fuwadog&type=svg")"
+                  test "$status" = "200"
+                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-fuwadog.headers
+                  grep -Eiq '^cache-control: public, max-age=[0-9]+' /tmp/streak-fuwadog.headers
+                  grep -Fq "<svg" /tmp/streak-fuwadog.svg
+
+            - name: Assert canonical denied user is not exposed
+              run: |
+                  set -euo pipefail
+                   status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                       --dump-header /tmp/streak-denied.headers \
+                       --output /tmp/streak-denied.body \
+                       --write-out '%{http_code}' \
+                       "$CANONICAL_URL/?user=$DENIED_USER&type=svg")"
+                   test "$status" = "403"
+                   grep -Fq "User not in whitelist" /tmp/streak-denied.body
+                   grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-denied.headers
+
+            - name: Assert demo route
+              run: |
+                  set -euo pipefail
+                  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+                      --output /tmp/streak-demo.html \
+                      "$CANONICAL_URL/demo/"
+                  grep -Fq "GitHub Readme Streak Stats" /tmp/streak-demo.html
+
+            - name: Assert demo asset and preview routes
+              run: |
+                  set -euo pipefail
+                  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+                      --dump-header /tmp/streak-demo-css.headers \
+                      --output /tmp/streak-demo-css.body \
+                      "$CANONICAL_URL/demo/css/style.css"
+                  grep -Eiq '^content-type: text/css' /tmp/streak-demo-css.headers
+                  grep -Fq "body" /tmp/streak-demo-css.body
+
+                  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+                      --dump-header /tmp/streak-demo-preview.headers \
+                      --output /tmp/streak-demo-preview.body \
+                      "$CANONICAL_URL/demo/preview.php?mode=daily&type=json"
+                  grep -Eiq '^content-type: application/json' /tmp/streak-demo-preview.headers
+                  jq -e '.mode == "daily"' /tmp/streak-demo-preview.body >/dev/null
+
+            - name: Assert demo route containment
+              run: |
+                  set -euo pipefail
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location --path-as-is \
+                      --output /tmp/streak-demo-traversal.body \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/demo/../composer.json")"
+                  test "$status" = "403" || test "$status" = "404"
+                   if grep -Fq '"denvercoder1/github-readme-streak-stats"' /tmp/streak-demo-traversal.body; then
+                       echo "Forbidden repository content found in demo traversal response" >&2
+                       exit 1
+                   else
+                       grep_status=$?
+                       if [ "$grep_status" -ne 1 ]; then
+                           echo "grep failed with status $grep_status" >&2
+                           exit "$grep_status"
+                       fi
+                   fi
+
+            - name: Assert SVG response
+              run: |
+                  set -euo pipefail
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --dump-header /tmp/streak-svg.headers \
+                      --output /tmp/streak-svg.body \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=svg")"
+                  test "$status" = "200"
+                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-svg.headers
+                  grep -Fq "<svg" /tmp/streak-svg.body
+
+            - name: Assert JSON response
+              run: |
+                  set -euo pipefail
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --dump-header /tmp/streak-json.headers \
+                      --output /tmp/streak-json.body \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=json")"
+                  test "$status" = "200"
+                  grep -Eiq '^content-type: application/json' /tmp/streak-json.headers
+                  jq -e 'type == "object" and has("mode")' /tmp/streak-json.body >/dev/null
+
+            - name: Assert PNG response contract
+              run: |
+                  set -euo pipefail
+                  status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --location \
+                      --dump-header /tmp/streak-png.headers \
+                      --output /tmp/streak-png.body \
+                      --write-out '%{http_code}' \
+                      "$CANONICAL_URL/?user=$ALLOWED_USER&type=png")"
+                  if [ "$status" = "200" ]; then
+                      grep -Eiq '^content-type: image/png' /tmp/streak-png.headers
+                      test "$(file --brief --mime-type /tmp/streak-png.body)" = "image/png"
+                  elif [ "$status" = "500" ]; then
+                      # Vercel does not provide Inkscape; only the controlled fallback is acceptable.
+                      grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-png.headers
+                      grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-png.headers
+                      grep -Fq "PNG output is not supported on this platform" /tmp/streak-png.body
+                       if grep -Fq "renderer_unavailable" /tmp/streak-png.body; then
+                           echo "Forbidden renderer marker found in PNG response" >&2
+                           exit 1
+                       else
+                           grep_status=$?
+                           if [ "$grep_status" -ne 1 ]; then
+                               echo "grep failed with status $grep_status" >&2
+                               exit "$grep_status"
+                           fi
+                       fi
+                  else
+                      echo "Unexpected PNG response status: $status" >&2
+                      exit 1
+                  fi
+
+            - name: Start self-hosted smoke service
+              env:
+                  TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  WHITELIST: DenverCoder1
+                  CACHE_TTL_DEFAULT: "60"
+              run: |
+                  set -euo pipefail
+                  set +x
+                   docker compose up -d --build renderer web
+                   docker compose exec -T renderer python3 -c \
+                       "import os,stat; raise SystemExit(0 if stat.S_ISSOCK(os.stat('/run/streak-renderer/renderer.sock').st_mode) else 1)"
+                   renderer_id="$(docker compose ps -q renderer)"
+                   for attempt in $(seq 1 30); do
+                       : "$attempt"
+                       health_status="$(docker inspect --format '{{.State.Health.Status}}' "$renderer_id" 2>/dev/null || true)"
+                       if [ "$health_status" = "healthy" ]; then
+                           break
+                       fi
+                       if [ "$attempt" = "30" ]; then
+                           docker compose logs --no-color web renderer >&2
+                           exit 1
+                       fi
+                       sleep 2
+                   done
+                   for attempt in $(seq 1 30); do
+                      : "$attempt"
+                      if curl --silent --show-error --fail "$SELF_HOSTED_URL/demo/" >/dev/null; then
+                          exit 0
+                      fi
+                      sleep 2
+                  done
+                  docker compose logs --no-color web renderer >&2
+                  exit 1
+
+            - name: Assert self-hosted listed and denied users
+              run: |
+                  set -euo pipefail
+                  listed_status="$(curl --silent --show-error \
+                      --dump-header /tmp/streak-self-hosted-listed.headers \
+                      --output /tmp/streak-self-hosted-listed.svg \
+                      --write-out '%{http_code}' \
+                      "$SELF_HOSTED_URL/?user=$SELF_HOSTED_ALLOWED_USER&type=svg")"
+                  test "$listed_status" = "200"
+                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-self-hosted-listed.headers
+                  grep -Eiq '^cache-control: public, max-age=60' /tmp/streak-self-hosted-listed.headers
+                  grep -Fq "<svg" /tmp/streak-self-hosted-listed.svg
+
+                  denied_status="$(curl --silent --show-error \
+                      --dump-header /tmp/streak-self-hosted-denied.headers \
+                      --output /tmp/streak-self-hosted-denied.body \
+                      --write-out '%{http_code}' \
+                      "$SELF_HOSTED_URL/?user=$DENIED_USER&type=svg")"
+                  test "$denied_status" = "403"
+                  grep -Fq "User not in whitelist" /tmp/streak-self-hosted-denied.body
+                  grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-self-hosted-denied.headers
+
+            - name: Assert route contract and direct PHP non-exposure
+              run: |
+                  set -euo pipefail
+                  for path in /api/index.php /api/card.php /api/stats.php /api/demo/index.php /api/demo/preview.php; do
+                      safe_path="${path//\//-}"
+                      status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --path-as-is \
+                          --dump-header "/tmp/streak-direct${safe_path}.headers" \
+                          --output "/tmp/streak-direct${safe_path}.body" \
+                          --write-out '%{http_code}' \
+                          "$CANONICAL_URL$path")"
+                      test "$status" = "404"
+                      grep -Eiq '^content-type: text/plain' "/tmp/streak-direct${safe_path}.headers"
+                      grep -Eiq '^cache-control: public, max-age=0, must-revalidate' "/tmp/streak-direct${safe_path}.headers"
+                       if grep -Fq '<?php' "/tmp/streak-direct${safe_path}.body"; then
+                           echo "Forbidden PHP source found in direct route response" >&2
+                           exit 1
+                       else
+                           grep_status=$?
+                           if [ "$grep_status" -ne 1 ]; then
+                               echo "grep failed with status $grep_status" >&2
+                               exit "$grep_status"
+                           fi
+                       fi
+                       if grep -Eiq 'TOKEN[0-9]*=|BEGIN (RSA|OPENSSH) PRIVATE KEY|gh[pousr]_[A-Za-z0-9]+' "/tmp/streak-direct${safe_path}.body"; then
+                           echo "Forbidden token content found in direct route response" >&2
+                           exit 1
+                       else
+                           grep_status=$?
+                           if [ "$grep_status" -ne 1 ]; then
+                               echo "grep failed with status $grep_status" >&2
+                               exit "$grep_status"
+                           fi
+                       fi
+                  done
+
+            - name: Assert self-hosted PNG and demo containment
+              run: |
+                  set -euo pipefail
+                  status="$(curl --silent --show-error \
+                      --dump-header /tmp/streak-self-hosted-png.headers \
+                      --output /tmp/streak-self-hosted.png \
+                      --write-out '%{http_code}' \
+                      "$SELF_HOSTED_URL/?user=$SELF_HOSTED_ALLOWED_USER&type=png")"
+                  test "$status" = "200"
+                  grep -Eiq '^content-type: image/png' /tmp/streak-self-hosted-png.headers
+                  test "$(file --brief --mime-type /tmp/streak-self-hosted.png)" = "image/png"
+
+                  status="$(curl --silent --show-error --path-as-is \
+                      --output /tmp/streak-self-hosted-traversal.body \
+                      --write-out '%{http_code}' \
+                      "$SELF_HOSTED_URL/demo/../composer.json")"
+                  test "$status" = "403" || test "$status" = "404"
+                   if grep -Fq '"denvercoder1/github-readme-streak-stats"' /tmp/streak-self-hosted-traversal.body; then
+                       echo "Forbidden repository content found in self-hosted traversal response" >&2
+                       exit 1
+                   else
+                       grep_status=$?
+                       if [ "$grep_status" -ne 1 ]; then
+                           echo "grep failed with status $grep_status" >&2
+                           exit "$grep_status"
+                       fi
+                   fi
+
+            - name: Stop self-hosted smoke service
+              if: always()
+              run: docker compose down --volumes --remove-orphans
+
+            - name: Set up PHP for missing-token check
+              uses: shivammathur/setup-php@c482204203a2eb89366ad513842766b70efaaee8 # v2
+              with:
+                  php-version: "8.2"
+                  extensions: curl, intl
+
+            - name: Install runtime dependencies
+              run: composer install --no-dev --no-interaction --prefer-dist --no-progress
+
+            - name: Assert missing-token response
+              run: |
+                  set -euo pipefail
+                  env -i PATH="$PATH" HOME="$HOME" WHITELIST=DenverCoder1 php -S 127.0.0.1:8080 -t api \
+                      >/tmp/streak-missing-token-server.log 2>&1 &
+                  server_pid=$!
+                  cleanup() { kill "$server_pid" 2>/dev/null || true; }
+                  trap cleanup EXIT
+                  sleep 1
+                  status="$(curl --silent --show-error --output /tmp/streak-missing-token.body \
+                      --dump-header /tmp/streak-missing-token.headers \
+                      --write-out '%{http_code}' \
+                      'http://127.0.0.1:8080/?user=DenverCoder1')"
+                  test "$status" = "500"
+                  grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-missing-token.headers
+                  grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-missing-token.headers
+                  grep -Fq "Missing GitHub token" /tmp/streak-missing-token.body
+                   if grep -Fq '<?php' /tmp/streak-missing-token.body; then
+                       echo "Forbidden PHP source found in missing-token response" >&2
+                       exit 1
+                   else
+                       grep_status=$?
+                       if [ "$grep_status" -ne 1 ]; then
+                           echo "grep failed with status $grep_status" >&2
+                           exit "$grep_status"
+                       fi
+                   fi
+                   if grep -Eiq 'TOKEN[0-9]*=|BEGIN (RSA|OPENSSH) PRIVATE KEY|gh[pousr]_[A-Za-z0-9]+' /tmp/streak-missing-token.body; then
+                       echo "Forbidden token content found in missing-token response" >&2
+                       exit 1
+                   else
+                       grep_status=$?
+                       if [ "$grep_status" -ne 1 ]; then
+                           echo "grep failed with status $grep_status" >&2
+                           exit "$grep_status"
+                       fi
+                   fi

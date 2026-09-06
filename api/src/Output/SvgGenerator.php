@@ -4,8 +4,24 @@ declare(strict_types=1);
 
 namespace App\Output;
 
+use App\Service\PngRendererClient;
+use App\Service\PngRendererException;
+
 class SvgGenerator
 {
+    private const SERVERLESS_PNG_ERROR =
+        "PNG output is not supported on this platform. " .
+        "PNG conversion requires Inkscape which is not available on serverless platforms. " .
+        "Please use type=svg instead.";
+    private const PNG_CONVERSION_ERROR = "PNG conversion failed. Please use type=svg instead.";
+
+    private readonly PngRendererClient $pngRenderer;
+
+    public function __construct(?PngRendererClient $pngRenderer = null)
+    {
+        $this->pngRenderer = $pngRenderer ?? new PngRendererClient();
+    }
+
     /**
      * Convert date from Y-M-D to more human-readable format
      *
@@ -244,6 +260,17 @@ class SvgGenerator
     }
 
     /**
+     * Escape untrusted text before inserting it into an SVG text node.
+     *
+     * @param string $text Text to escape
+     * @return string Escaped SVG text
+     */
+    private function escapeSvgText(string $text): string
+    {
+        return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8");
+    }
+
+    /**
      * Get the card width from params
      *
      * @param array<string,string> $params Request parameters
@@ -361,11 +388,15 @@ class SvgGenerator
 
         $useShortNumbers = ($params["short_numbers"] ?? "") === "true";
 
-        $totalContributions = $this->formatNumber($stats["totalContributions"], $localeCode, $useShortNumbers);
+        $totalContributions = $this->escapeSvgText(
+            $this->formatNumber($stats["totalContributions"], $localeCode, $useShortNumbers),
+        );
         $firstContribution = $this->formatDate($stats["firstContribution"], $dateFormat, $localeCode);
         $totalContributionsRange = $firstContribution . " - " . $localeTranslations["Present"];
 
-        $currentStreak = $this->formatNumber($stats["currentStreak"]["length"], $localeCode, $useShortNumbers);
+        $currentStreak = $this->escapeSvgText(
+            $this->formatNumber($stats["currentStreak"]["length"], $localeCode, $useShortNumbers),
+        );
         $currentStreakStart = $this->formatDate($stats["currentStreak"]["start"], $dateFormat, $localeCode);
         $currentStreakEnd = $this->formatDate($stats["currentStreak"]["end"], $dateFormat, $localeCode);
         $currentStreakRange = $currentStreakStart;
@@ -373,7 +404,9 @@ class SvgGenerator
             $currentStreakRange .= " - " . $currentStreakEnd;
         }
 
-        $longestStreak = $this->formatNumber($stats["longestStreak"]["length"], $localeCode, $useShortNumbers);
+        $longestStreak = $this->escapeSvgText(
+            $this->formatNumber($stats["longestStreak"]["length"], $localeCode, $useShortNumbers),
+        );
         $longestStreakStart = $this->formatDate($stats["longestStreak"]["start"], $dateFormat, $localeCode);
         $longestStreakEnd = $this->formatDate($stats["longestStreak"]["end"], $dateFormat, $localeCode);
         $longestStreakRange = $longestStreakStart;
@@ -407,17 +440,19 @@ class SvgGenerator
         $excludedDays = "";
         if (!empty($stats["excludedDays"])) {
             $offset = $direction === "rtl" ? $cardWidth - 5 : 5;
-            $excludingDaysText = $this->getExcludingDaysText($stats["excludedDays"], $localeTranslations, $localeCode);
+            $excludingDaysText = $this->escapeSvgText(
+                $this->getExcludingDaysText($stats["excludedDays"], $localeTranslations, $localeCode),
+            );
             $excludedDays = "<g style='isolation: isolate'>
                 <g transform='translate({$offset},187)'>
                     <text stroke-width='0' text-anchor='right' fill='{$theme["excludeDaysLabel"]}' stroke='none' font-family='\"Segoe UI\", Ubuntu, sans-serif' font-weight='400' font-size='10px' font-style='normal' style='opacity: 0; animation: fadein 0.5s linear forwards 0.9s'>
                         * {$excludingDaysText}
                     </text>
                 </g>
-            </g>";
+                </g>";
         }
 
-        return "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'
+        $svg = "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'
                     style='isolation: isolate' viewBox='0 0 {$cardWidth} {$cardHeight}' width='{$cardWidth}px' height='{$cardHeight}px' direction='{$direction}'>
             <style>
                 @keyframes currstreak {
@@ -428,6 +463,12 @@ class SvgGenerator
                 @keyframes fadein {
                     0% { opacity: 0; }
                     100% { opacity: 1; }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    * {
+                        animation: none !important;
+                        opacity: 1 !important;
+                    }
                 }
             </style>
             <defs>
@@ -508,7 +549,9 @@ class SvgGenerator
                 </g>
                 {$excludedDays}
             </g>
-        </svg>";
+        </svg>\n";
+
+        return ($params["animation"] ?? "") === "true" ? $svg : $this->removeAnimations($svg);
     }
 
     /**
@@ -534,12 +577,28 @@ class SvgGenerator
         $rectHeight = $cardHeight - 1;
         $heightOffset = ($cardHeight - 195) / 2;
         $errorLabelOffset = $cardHeight / 2 + 10.5;
+        $useAnimation = ($params["animation"] ?? "") === "true";
+        $message = $this->escapeSvgText($message);
+        $animationAttribute = $useAnimation ? " style='opacity: 0; animation: fadein 0.5s linear forwards 0.3s'" : "";
+        $animationCss = $useAnimation
+            ? "
+                @keyframes fadein {
+                    0% { opacity: 0; }
+                    100% { opacity: 1; }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    * {
+                        animation: none !important;
+                        opacity: 1 !important;
+                    }
+                }"
+            : "";
 
         return "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' style='isolation: isolate' viewBox='0 0 {$cardWidth} {$cardHeight}' width='{$cardWidth}px' height='{$cardHeight}px'>
             <style>
                 a {
                     fill: {$theme["dates"]};
-                }
+                }{$animationCss}
             </style>
             <defs>
                 <clipPath id='outer_rectangle'>
@@ -553,7 +612,7 @@ class SvgGenerator
                 </g>
                 <g style='isolation: isolate'>
                     <g transform='translate({$centerOffset}, {$errorLabelOffset})'>
-                        <text x='0' y='50' dy='0.25em' stroke-width='0' text-anchor='middle' fill='{$theme["sideLabels"]}' stroke='none' font-family='\"Segoe UI\", Ubuntu, sans-serif' font-weight='400' font-size='14px' font-style='normal'>
+                        <text x='0' y='50' dy='0.25em' stroke-width='0' text-anchor='middle' fill='{$theme["sideLabels"]}' stroke='none' font-family='\"Segoe UI\", Ubuntu, sans-serif' font-weight='400' font-size='14px' font-style='normal'{$animationAttribute}>
                             {$message}
                         </text>
                     </g>
@@ -563,7 +622,7 @@ class SvgGenerator
                             <ellipse cx='{$centerOffset}' cy='31' rx='13' ry='18'/>
                         </mask>
                     </defs>
-                    <g transform='translate({$centerOffset}, {$heightOffset})'>
+                    <g transform='translate({$centerOffset}, {$heightOffset})'{$animationAttribute}>
                         <path fill='{$theme["fire"]}' d='M0,35.8c-25.2,0-45.7,20.5-45.7,45.7s20.5,45.8,45.7,45.8s45.7-20.5,45.7-45.7S25.2,35.8,0,35.8z M0,122.3c-11.2,0-21.4-4.5-28.8-11.9c-2.9-2.9-5.4-6.3-7.4-10c-3-5.7-4.6-12.1-4.6-18.9c0-22.5,18.3-40.8,40.8-40.8 c10.7,0,20.4,4.1,27.7,10.9c3.8,3.5,6.9,7.7,9.1,12.4c2.6,5.3,4,11.3,4,17.6C40.8,104.1,22.5,122.3,0,122.3z'/>
                         <path fill='{$theme["fire"]}' d='M4.8,93.8c5.4,1.1,10.3,4.2,13.7,8.6l3.9-3c-4.1-5.3-10-9-16.6-10.4c-10.6-2.2-21.7,1.9-28.3,10.4l3.9,3 C-13.1,95.3-3.9,91.9,4.8,93.8z'/>
                         <circle fill='{$theme["fire"]}' cx='-15' cy='71' r='4.9'/>
@@ -658,16 +717,22 @@ class SvgGenerator
      */
     public function convertSvgToPng(string $svg, int $cardWidth, int $cardHeight): string
     {
-        if (!function_exists("shell_exec") || shell_exec("echo test") === null) {
-            throw new \InvalidArgumentException(
-                "PNG output is not supported on this platform. " .
-                    "PNG conversion requires Inkscape which is not available on serverless platforms. " .
-                    "Please use type=svg instead.",
-                500,
-            );
+        $svg = trim($svg);
+        $svg = $this->removeAnimations($svg);
+
+        if ($this->pngRenderer->hasConfiguredSocket()) {
+            return $this->pngRenderer->render($svg, $cardWidth, $cardHeight);
         }
 
-        $inkscapeCheck = shell_exec("inkscape --version 2>&1");
+        if ($this->isServerlessEnvironment()) {
+            throw new \InvalidArgumentException(self::SERVERLESS_PNG_ERROR, 500);
+        }
+
+        if (!function_exists("shell_exec") || shell_exec("echo test") === null) {
+            throw new \InvalidArgumentException(self::SERVERLESS_PNG_ERROR, 500);
+        }
+
+        $inkscapeCheck = shell_exec("inkscape --version 2>/dev/null");
         if (empty($inkscapeCheck) || strpos($inkscapeCheck, "Inkscape") === false) {
             throw new \InvalidArgumentException(
                 "PNG output requires Inkscape to be installed on the server. " .
@@ -676,8 +741,6 @@ class SvgGenerator
             );
         }
 
-        $svg = trim($svg);
-        $svg = $this->removeAnimations($svg);
         $svg = str_replace("\n", " ", $svg);
         $svg = escapeshellarg($svg);
 
@@ -686,11 +749,23 @@ class SvgGenerator
         $png = shell_exec($cmd);
 
         if (empty($png)) {
-            $error = shell_exec("$cmd 2>&1");
-            throw new \InvalidArgumentException("Failed to convert SVG to PNG: {$error}", 500);
+            throw new \InvalidArgumentException(self::PNG_CONVERSION_ERROR, 500);
         }
 
         return $png;
+    }
+
+    private function isServerlessEnvironment(): bool
+    {
+        $vercel = $_SERVER["VERCEL"] ?? ($_ENV["VERCEL"] ?? getenv("VERCEL"));
+        if (is_string($vercel) && trim($vercel) === "1") {
+            return true;
+        }
+
+        $lambda =
+            $_SERVER["AWS_LAMBDA_FUNCTION_NAME"] ??
+            ($_ENV["AWS_LAMBDA_FUNCTION_NAME"] ?? getenv("AWS_LAMBDA_FUNCTION_NAME"));
+        return is_string($lambda) && trim($lambda) !== "";
     }
 
     /**
@@ -755,8 +830,9 @@ class SvgGenerator
         if ($requestedType === "json") {
             $data = gettype($output) === "string" ? ["error" => $output, "code" => $errorCode] : $output;
             return [
-                "contentType" => "application/json",
-                "body" => json_encode($data),
+                "contentType" => "application/json; charset=UTF-8",
+                "status" => $errorCode,
+                "body" => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             ];
         }
 
@@ -769,18 +845,29 @@ class SvgGenerator
 
         if ($requestedType === "png") {
             try {
-                $cardWidth = (int) preg_replace("/.*width=[\"'](\d+)px[\"'].*/", "$1", $svg);
-                $cardHeight = (int) preg_replace("/.*height=[\"'](\d+)px[\"'].*/", "$1", $svg);
+                preg_match("/\bwidth=[\"'](\d+)px[\"']/", $svg, $widthMatches);
+                preg_match("/\bheight=[\"'](\d+)px[\"']/", $svg, $heightMatches);
+                $cardWidth = (int) ($widthMatches[1] ?? 0);
+                $cardHeight = (int) ($heightMatches[1] ?? 0);
+                if ($cardWidth <= 0 || $cardHeight <= 0) {
+                    throw new \InvalidArgumentException("Unable to determine SVG dimensions for PNG output.", 500);
+                }
                 $png = $this->convertSvgToPng($svg, $cardWidth, $cardHeight);
                 return [
                     "contentType" => "image/png",
+                    "status" => $errorCode,
                     "body" => $png,
                 ];
-            } catch (\Exception $e) {
+            } catch (\Throwable $error) {
                 return [
                     "contentType" => "image/svg+xml",
-                    "status" => 500,
-                    "body" => $this->generateErrorCard($e->getMessage(), $params),
+                    "status" => $this->getPngFallbackStatus($errorCode),
+                    "body" => $this->removeAnimations(
+                        $this->generateErrorCard(
+                            $this->getPngFallbackMessage($output, $errorCode, $error),
+                            ["animation" => "false", "disable_animations" => "true"] + $params,
+                        ),
+                    ),
                 ];
             }
         }
@@ -791,8 +878,36 @@ class SvgGenerator
 
         return [
             "contentType" => "image/svg+xml",
+            "status" => $errorCode,
             "body" => $svg,
         ];
+    }
+
+    private function getPngFallbackStatus(int $errorCode): int
+    {
+        return $errorCode === 403 ? 403 : 500;
+    }
+
+    private function getPngFallbackMessage(string|array $output, int $errorCode, \Throwable $error): string
+    {
+        if ($output === "User not in whitelist." && $errorCode === 403) {
+            return $output;
+        }
+
+        return $this->getSafePngErrorMessage($error);
+    }
+
+    private function getSafePngErrorMessage(\Throwable $error): string
+    {
+        if (!($error instanceof PngRendererException)) {
+            return self::PNG_CONVERSION_ERROR;
+        }
+
+        $rendererCode = strtolower($error->rendererCode);
+        if (preg_match("/^[a-z0-9_]{1,32}$/", $rendererCode) !== 1) {
+            $rendererCode = "renderer_failed";
+        }
+        return "PNG renderer error: {$rendererCode}";
     }
 
     /**
@@ -805,7 +920,7 @@ class SvgGenerator
     public function renderOutput(string|array $output, int $responseCode = 200): void
     {
         $response = $this->generateOutput($output, null, $responseCode);
-        http_response_code($responseCode);
+        http_response_code($response["status"] ?? $responseCode);
         header("Content-Type: {$response["contentType"]}");
         exit($response["body"]);
     }

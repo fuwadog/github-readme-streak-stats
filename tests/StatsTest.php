@@ -4,77 +4,124 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\TestCase;
 
-// load functions
 require_once dirname(__DIR__, 1) . "/vendor/autoload.php";
 require_once "api/stats.php";
 
-// load .env
-$dotenv = \Dotenv\Dotenv::createImmutable(dirname(__DIR__, 1));
-$dotenv->safeLoad();
+class FixtureGitHubClient extends \App\Client\GitHubClient
+{
+    public function __construct(private readonly bool $includeHistoricalYears = false)
+    {
+        parent::__construct(["fixture-token"]);
+    }
 
-// if environment variables are not loaded, display error
-if (!isset($_ENV["TOKEN"])) {
-    $message = file_exists(dirname(__DIR__, 1) . "/.env")
-        ? "Missing token in config. Check Contributing.md for details."
-        : ".env was not found. Check Contributing.md for details.";
+    public function executeContributionGraphRequests(string $user, array $years): array
+    {
+        if ($user !== "DenverCoder1") {
+            throw new InvalidArgumentException("Could not find a user with that name.", 404);
+        }
+        $graphs = [];
+        foreach ($years as $year) {
+            $days = [
+                ["date" => "2020-01-01", "count" => 2],
+                ["date" => "2020-01-02", "count" => 1],
+                ["date" => "2020-01-03", "count" => 0],
+                ["date" => "2020-01-04", "count" => 3],
+                ["date" => "2020-01-05", "count" => 1],
+            ];
+            if (count($years) > 1 && !$this->includeHistoricalYears) {
+                $days = [];
+            } elseif ($this->includeHistoricalYears && $year !== (int) date("Y")) {
+                $days = [["date" => "$year-01-01", "count" => 1]];
+            }
+            $graphs[$year] = $this->createGraph($days);
+        }
 
-    die($message);
+        return $graphs;
+    }
+
+    protected function createGraph(array $days): \stdClass
+    {
+        $contributionDays = array_map(
+            static fn(array $day): \stdClass => (object) [
+                "contributionCount" => $day["count"],
+                "date" => $day["date"],
+            ],
+            $days,
+        );
+
+        return (object) [
+            "data" => (object) [
+                "user" => (object) [
+                    "createdAt" => "2016-08-10T00:00:00Z",
+                    "contributionsCollection" => (object) [
+                        "contributionYears" => [2020, 2019, 2018, 2017, 2016],
+                        "contributionCalendar" => (object) [
+                            "weeks" => [(object) ["contributionDays" => $contributionDays]],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+}
+
+final class PartialResponseGitHubClient extends FixtureGitHubClient
+{
+    public function executeContributionGraphRequests(string $user, array $years): array
+    {
+        $responses = parent::executeContributionGraphRequests($user, $years);
+        if (count($years) > 1) {
+            array_pop($responses);
+        }
+        return $responses;
+    }
 }
 
 final class StatsTest extends TestCase
 {
+    private FixtureGitHubClient $githubClient;
+
+    protected function setUp(): void
+    {
+        $_SERVER["WHITELIST"] = "DenverCoder1";
+        $this->githubClient = new FixtureGitHubClient();
+        $GLOBALS["githubClient"] = $this->githubClient;
+    }
+
+    protected function tearDown(): void
+    {
+        unset($_SERVER["WHITELIST"]);
+    }
+
+    private function getGraphs(
+        string $user,
+        ?int $startingYear = null,
+        ?FixtureGitHubClient $githubClient = null,
+    ): array {
+        $githubClient ??= $this->githubClient;
+        $GLOBALS["githubClient"] = $githubClient;
+        $parameterCount = (new ReflectionFunction("getContributionGraphs"))->getNumberOfParameters();
+        $arguments = [$user];
+        if ($startingYear !== null || $parameterCount >= 2) {
+            $arguments[] = $startingYear;
+        }
+        if ($parameterCount >= 3) {
+            $arguments[] = $githubClient;
+        }
+        return call_user_func_array("getContributionGraphs", $arguments);
+    }
+
     /**
      * Test that values seem correct for valid username
      */
     public function testValidUsername(): void
     {
-        $_SERVER["WHITELIST"] = "DenverCoder1";
-        try {
-            $contributionGraphs = getContributionGraphs("DenverCoder1");
-            $contributions = getContributionDates($contributionGraphs);
-            $stats = getContributionStats($contributions);
-            // test total contributions
-            $this->assertIsInt($stats["totalContributions"]);
-            $this->assertGreaterThan(2300, $stats["totalContributions"]);
-            // test first contribution
-            $this->assertEquals("2016-08-10", $stats["firstContribution"]);
-            // test longest streak length
-            $this->assertIsInt($stats["longestStreak"]["length"]);
-            $this->assertGreaterThanOrEqual(98, $stats["longestStreak"]["length"]);
-            // test current streak length
-            $this->assertIsInt($stats["currentStreak"]["length"]);
-            $this->assertGreaterThanOrEqual(0, $stats["currentStreak"]["length"]);
-            // test longest streak start date are in form YYYY-MM-DD
-            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["longestStreak"]["start"]);
-            // test longest streak end date are in form YYYY-MM-DD
-            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["longestStreak"]["end"]);
-            // test current streak start date are in form YYYY-MM-DD
-            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["currentStreak"]["start"]);
-            // test current streak end date are in form YYYY-MM-DD
-            $this->assertMatchesRegularExpression("/2\d{3}-[01]\d-[0-3]\d/", $stats["currentStreak"]["end"]);
-            // test current streak end date is today or yesterday
-            $this->assertContains($stats["currentStreak"]["end"], [
-                date("Y-m-d"),
-                date("Y-m-d", strtotime("yesterday")),
-                date("Y-m-d", strtotime("tomorrow")),
-            ]);
-            // test length of longest streak matches time between start and end dates
-            $longestStreakDelta =
-                strtotime($stats["longestStreak"]["end"]) - strtotime($stats["longestStreak"]["start"]);
-            $this->assertEquals($longestStreakDelta / 60 / 60 / 24 + 1, $stats["longestStreak"]["length"]);
-            // if the current streak is 0, the start date should be the same as the end date
-            if ($stats["currentStreak"]["length"] == 0) {
-                $this->assertEquals($stats["currentStreak"]["start"], $stats["currentStreak"]["end"]);
-            }
-            // test length of current streak matches time between start and end dates
-            else {
-                $currentStreakDelta =
-                    strtotime($stats["currentStreak"]["end"]) - strtotime($stats["currentStreak"]["start"]);
-                $this->assertEquals($currentStreakDelta / 60 / 60 / 24 + 1, $stats["currentStreak"]["length"]);
-            }
-        } finally {
-            unset($_SERVER["WHITELIST"]);
-        }
+        $stats = getContributionStats(getContributionDates($this->getGraphs("DenverCoder1")));
+
+        $this->assertSame(7, $stats["totalContributions"]);
+        $this->assertSame("2020-01-01", $stats["firstContribution"]);
+        $this->assertSame(["start" => "2020-01-01", "end" => "2020-01-02", "length" => 2], $stats["longestStreak"]);
+        $this->assertSame(["start" => "2020-01-04", "end" => "2020-01-05", "length" => 2], $stats["currentStreak"]);
     }
 
     /**
@@ -83,15 +130,11 @@ final class StatsTest extends TestCase
     public function testOverrideStartingYear(): void
     {
         $_SERVER["WHITELIST"] = "DenverCoder1";
-        try {
-            $contributionGraphs = getContributionGraphs("DenverCoder1", 2019);
-            $contributions = getContributionDates($contributionGraphs);
-            $stats = getContributionStats($contributions);
-            // test first contribution
-            $this->assertEquals("2019-01-01", $stats["firstContribution"]);
-        } finally {
-            unset($_SERVER["WHITELIST"]);
-        }
+        $stats = getContributionStats(
+            getContributionDates($this->getGraphs("DenverCoder1", 2019, new FixtureGitHubClient(true))),
+        );
+
+        $this->assertSame("2019-01-01", $stats["firstContribution"]);
     }
 
     /**
@@ -99,9 +142,10 @@ final class StatsTest extends TestCase
      */
     public function testInvalidUsername(): void
     {
+        $_SERVER["WHITELIST"] = "help";
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage("Could not find a user with that name.");
-        getContributionGraphs("help");
+        $this->getGraphs("help");
     }
 
     /**
@@ -111,7 +155,7 @@ final class StatsTest extends TestCase
     {
         $_SERVER["WHITELIST"] = "DenverCoder1";
         try {
-            $contributionGraphs = getContributionGraphs("DenverCoder1");
+            $contributionGraphs = $this->getGraphs("DenverCoder1");
             $this->assertIsArray($contributionGraphs);
             $this->assertNotEmpty($contributionGraphs);
         } finally {
@@ -128,10 +172,75 @@ final class StatsTest extends TestCase
         try {
             $this->expectException(InvalidArgumentException::class);
             $this->expectExceptionMessage("User not in whitelist.");
-            getContributionGraphs("help");
+            $this->getGraphs("help");
         } finally {
             unset($_SERVER["WHITELIST"]);
         }
+    }
+
+    public function testCredentialsAreValidatedBeforeContributionFanout(): void
+    {
+        $client = new \App\Client\GitHubClient([]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("There is no GitHub token available.");
+        getContributionGraphs("DenverCoder1", null, $client);
+    }
+
+    public function testContributionYearBudgetIsBounded(): void
+    {
+        $client = new \App\Client\GitHubClient(["fixture-token"]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage("Too many contribution years requested.");
+        $client->executeContributionGraphRequests("DenverCoder1", range(2000, 2100));
+    }
+
+    public function testExpiredMonotonicDeadlineStopsNewRequests(): void
+    {
+        $client = new \App\Client\GitHubClient(["fixture-token"]);
+        $deadline = new ReflectionProperty(\App\Client\GitHubClient::class, "deadlineNanoseconds");
+        $deadline->setValue($client, hrtime(true) - 1);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(504);
+        $client->getGraphQLCurlHandle("query", "fixture-token");
+    }
+
+    public function testGraphQLRequestsShareOneMonotonicDeadline(): void
+    {
+        $client = new \App\Client\GitHubClient(["fixture-token"]);
+        $deadline = new ReflectionProperty(\App\Client\GitHubClient::class, "deadlineNanoseconds");
+
+        $firstHandle = $client->getGraphQLCurlHandle("query", "fixture-token");
+        $firstDeadline = $deadline->getValue($client);
+        $secondHandle = $client->getGraphQLCurlHandle("query", "fixture-token");
+        $secondDeadline = $deadline->getValue($client);
+        curl_close($firstHandle);
+        curl_close($secondHandle);
+
+        $this->assertIsInt($firstDeadline);
+        $this->assertSame($firstDeadline, $secondDeadline);
+    }
+
+    public function testExhaustedAttemptBudgetAbortsBeforeAnotherRetry(): void
+    {
+        $client = new \App\Client\GitHubClient(["fixture-token"]);
+        $attempts = new ReflectionProperty(\App\Client\GitHubClient::class, "attemptsUsed");
+        $attempts->setValue($client, 100);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionCode(503);
+        $client->executeContributionGraphRequests("DenverCoder1", [2025]);
+    }
+
+    public function testPartialHistoricalResultsAbortWithoutReturningPartialData(): void
+    {
+        $client = new PartialResponseGitHubClient();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage("Failed to retrieve contributions for year");
+        getContributionGraphs("DenverCoder1", null, $client);
     }
 
     /**
@@ -139,9 +248,10 @@ final class StatsTest extends TestCase
      */
     public function testOrganizationName(): void
     {
+        $_SERVER["WHITELIST"] = "DenverCoderOne";
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage("Could not find a user with that name.");
-        getContributionGraphs("DenverCoderOne");
+        $this->getGraphs("DenverCoderOne");
     }
 
     /**
@@ -243,22 +353,24 @@ final class StatsTest extends TestCase
     public function testMultipleYearStreak(): void
     {
         $contributions = [];
-        for ($i = 369; $i >= 0; --$i) {
-            $contributions[date("Y-m-d", strtotime("$i days ago"))] = 1;
+        $firstDate = new DateTimeImmutable("2024-01-01");
+        for ($i = 0; $i < 370; ++$i) {
+            $contributions[$firstDate->modify("+$i days")->format("Y-m-d")] = 1;
         }
         $stats = getContributionStats($contributions);
+        $lastDate = $firstDate->modify("+369 days")->format("Y-m-d");
         $expected = [
             "mode" => "daily",
             "totalContributions" => 370,
-            "firstContribution" => date("Y-m-d", strtotime("369 days ago")),
+            "firstContribution" => "2024-01-01",
             "longestStreak" => [
-                "start" => date("Y-m-d", strtotime("369 days ago")),
-                "end" => date("Y-m-d"),
+                "start" => "2024-01-01",
+                "end" => $lastDate,
                 "length" => 370,
             ],
             "currentStreak" => [
-                "start" => date("Y-m-d", strtotime("369 days ago")),
-                "end" => date("Y-m-d"),
+                "start" => "2024-01-01",
+                "end" => $lastDate,
                 "length" => 370,
             ],
             "excludedDays" => [],

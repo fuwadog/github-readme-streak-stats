@@ -23,6 +23,11 @@ Changes strictly related to documentation can skip this section.
 - [ ] Tested locally with a valid username
 - [ ] Tested locally with an invalid username
 - [ ] Ran tests with `composer test`
+- [ ] Ran the deterministic regression check with `composer regression`
+- [ ] Ran static analysis with `composer analyse`
+- [ ] Ran the coverage check with `composer coverage`
+- [ ] Ran the formatter check with `composer lint`
+- [ ] Installed the locked Node dependencies with `npm ci`
 - [ ] Added or updated test cases to test new features
 
 ## Checklist:
@@ -31,6 +36,7 @@ Changes strictly related to documentation can skip this section.
 - [ ] The code is properly formatted and is consistent with the existing code style
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
+- [ ] I have updated translation progress when translations changed
 - [ ] My changes generate no new warnings
 
 ## Screenshots

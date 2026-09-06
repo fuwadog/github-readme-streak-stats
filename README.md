@@ -354,7 +354,7 @@ unset TOKEN
 
 #### Dependency and CVE release gate
 
-Do not cut over or release with an unresolved critical or high CVE in application dependencies, the renderer, or a production image. Medium and low findings require a tracked exception naming the affected component, impact, mitigation, owner, and expiry no more than 30 days away; there are no indefinite waivers. Run the Composer, npm, and image audits again immediately before cutover. An unavailable or incomplete audit is a failed gate, not an approval.
+Do not cut over or release with an unresolved critical or high CVE in application dependencies, the renderer, or a production image. CI enforces the image check with pinned Trivy scans of the local verification, renderer, and production images; these scans require no registry or Docker credentials and do not suppress findings. Medium and low findings require a tracked exception naming the affected component, impact, mitigation, owner, and expiry no more than 30 days away; there are no indefinite waivers. Run the Composer, npm, and image audits again immediately before cutover. An unavailable or incomplete audit is a failed gate, not an approval.
 
 [hspace]: https://user-images.githubusercontent.com/20955511/136058102-b79570bc-4912-4369-b664-064a0ada8588.png
 [verceldeploy]: https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FDenverCoder1%2Fgithub-readme-streak-stats%2Ftree%2Fvercel&env=TOKEN&envDescription=GitHub%20Personal%20Access%20Token%20(no%20scopes%20required)&envLink=https%3A%2F%2Fgithub.com%2Fsettings%2Ftokens%2Fnew%3Fdescription%3DGitHub%2520Readme%2520Streak%2520Stats&project-name=streak-stats&repository-name=github-readme-streak-stats

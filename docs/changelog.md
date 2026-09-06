@@ -133,10 +133,11 @@ committed, pushed, and deployed by the repository owner.
 
 ### Remaining release blockers and limitations
 
-- Docker Scout remains an unsuppressed release blocker. Current scans report
-  unresolved critical/high findings in the verification, renderer, and
-  production images, including `CVE-2026-85091` and `CVE-2026-86140` in the
-  production image and OpenSSL/TIFF findings in the renderer image.
+- Pinned Trivy v0.70.0 scans the verification, renderer, and production images
+  locally with read-only repository permissions and no Docker or registry
+  credentials. It remains an unsuppressed release blocker for unresolved
+  critical/high findings, including `CVE-2026-85091` and `CVE-2026-86140` in
+  the production image and OpenSSL/TIFF findings in the renderer image.
 - No CVE was suppressed, bypassed, or claimed fixed without upstream evidence.
 - Vercel WAF configuration, production secret provenance, production
   `WHITELIST` provenance, preview protection, and deployed one-function state

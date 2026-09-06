@@ -136,40 +136,106 @@ jobs:
                   ! grep -Eq '^[[:space:]]*EXPOSE[[:space:]]' renderer/Dockerfile
 
             - name: Build non-deployed verification target
+              id: build-verification
               run: docker build --pull --target verification --tag streak-stats-verification .
 
-            - name: Scan verification image with Docker Scout
-              uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d
+            - name: Scan verification image with Trivy
+              if: ${{ !cancelled() && steps.build-verification.outcome == 'success' }}
+              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
               with:
-                  command: cves
-                  image: local://streak-stats-verification
-                  only-severities: critical,high
-                  exit-code: true
-                  summary: true
-                  write-comment: false
+                  version: v0.70.0
+                  scan-type: image
+                  image-ref: streak-stats-verification
+                  scanners: vuln
+                  vuln-type: os,library
+                  severity: HIGH,CRITICAL
+                  ignore-unfixed: false
+                  exit-code: 1
+                  format: table
+                  output: trivy-verification.txt
+                  cache: true
+
+            - name: Append verification image scan summary
+              if: ${{ !cancelled() }}
+              run: |
+                  {
+                      printf '### Trivy verification image scan\n\n'
+                      if [ -f trivy-verification.txt ]; then
+                          cat trivy-verification.txt
+                      elif [ "${{ steps.build-verification.outcome }}" != "success" ]; then
+                          printf 'Scan unavailable: verification image build did not succeed.\n'
+                      else
+                          printf 'Scan unavailable: Trivy did not produce output after a successful image build.\n'
+                      fi
+                      printf '\n'
+                  } >> "$GITHUB_STEP_SUMMARY"
 
             - name: Run renderer unit tests
               run: docker compose --profile test run --rm renderer-tests
 
             - name: Build renderer image
+              id: build-renderer
+              if: ${{ !cancelled() }}
               run: docker build --pull --file renderer/Dockerfile --target production --tag streak-stats-renderer .
 
-            - name: Scan renderer image with Docker Scout
-              uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d
+            - name: Scan renderer image with Trivy
+              if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
+              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
               with:
-                  command: cves
-                  image: local://streak-stats-renderer
-                  only-severities: critical,high
-                  exit-code: true
-                  summary: true
-                  write-comment: false
+                  version: v0.70.0
+                  scan-type: image
+                  image-ref: streak-stats-renderer
+                  scanners: vuln
+                  vuln-type: os,library
+                  severity: HIGH,CRITICAL
+                  ignore-unfixed: false
+                  exit-code: 1
+                  format: table
+                  output: trivy-renderer.txt
+                  cache: true
 
-            - name: Build and health-check production container
+            - name: Append renderer image scan summary
+              if: ${{ !cancelled() }}
+              run: |
+                  {
+                      printf '### Trivy renderer image scan\n\n'
+                      if [ -f trivy-renderer.txt ]; then
+                          cat trivy-renderer.txt
+                      elif [ "${{ steps.build-renderer.outcome }}" != "success" ]; then
+                          printf 'Scan unavailable: renderer image build did not succeed.\n'
+                      else
+                          printf 'Scan unavailable: Trivy did not produce output after a successful image build.\n'
+                      fi
+                      printf '\n'
+                  } >> "$GITHUB_STEP_SUMMARY"
+
+            - name: Build production image
+              id: build-production
+              if: ${{ !cancelled() }}
               run: |
                   set -euo pipefail
                   docker build --pull --tag streak-stats-ci .
+
+            - name: Health-check production container
+              id: production-readiness
+              if: ${{ !cancelled() && steps.build-production.outcome == 'success' }}
+              run: |
+                  set -euo pipefail
+                  # shellcheck disable=SC2317 # cleanup runs indirectly via the EXIT trap
+                  cleanup() {
+                      local original_exit_code=$?
+                      if docker rm --force streak-stats-ci >/dev/null 2>&1; then
+                          printf 'Production container cleanup succeeded.\n'
+                      else
+                          printf 'Failed to remove production container streak-stats-ci.\n' >&2
+                          if [ "$original_exit_code" -eq 0 ]; then
+                              exit 1
+                          fi
+                      fi
+                      exit "$original_exit_code"
+                  }
+                  trap cleanup EXIT
                   docker run --detach --name streak-stats-ci --publish 8080:80 streak-stats-ci
-                  trap 'docker rm --force streak-stats-ci >/dev/null 2>&1 || true' EXIT
                   for attempt in $(seq 1 30); do
                       : "$attempt"
                       health="$(docker inspect --format '{{.State.Health.Status}}' streak-stats-ci)"
@@ -186,12 +252,35 @@ jobs:
                   docker logs streak-stats-ci
                   exit 1
 
-            - name: Scan production image with Docker Scout
-              uses: docker/scout-action@7c6b6c3f7844478ace1ffd4e7aef649053d1f87d
+            - name: Scan production image with Trivy
+              if: ${{ !cancelled() && steps.build-production.outcome == 'success' && steps.production-readiness.outcome == 'success' }}
+              uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
               with:
-                  command: cves
-                  image: local://streak-stats-ci
-                  only-severities: critical,high
-                  exit-code: true
-                  summary: true
-                  write-comment: false
+                  version: v0.70.0
+                  scan-type: image
+                  image-ref: streak-stats-ci
+                  scanners: vuln
+                  vuln-type: os,library
+                  severity: HIGH,CRITICAL
+                  ignore-unfixed: false
+                  exit-code: 1
+                  format: table
+                  output: trivy-production.txt
+                  cache: true
+
+            - name: Append production image scan summary
+              if: ${{ !cancelled() }}
+              run: |
+                  {
+                      printf '### Trivy production image scan\n\n'
+                      if [ -f trivy-production.txt ]; then
+                          cat trivy-production.txt
+                      elif [ "${{ steps.build-production.outcome }}" != "success" ]; then
+                          printf 'Scan unavailable: production image build did not succeed.\n'
+                      elif [ "${{ steps.production-readiness.outcome }}" != "success" ]; then
+                          printf 'Scan skipped: production readiness health check did not pass.\n'
+                      else
+                          printf 'Scan unavailable: Trivy did not produce output after a successful image build.\n'
+                      fi
+                      printf '\n'
+                  } >> "$GITHUB_STEP_SUMMARY"

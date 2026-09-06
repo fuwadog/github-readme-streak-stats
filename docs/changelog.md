@@ -161,6 +161,8 @@ committed, pushed, and deployed by the repository owner.
   isolation as mitigation. The policy file is not scan evidence.
 - No other CVE is present in `.trivyignore`; no additional exception or fix is
   claimed without authoritative upstream or future CI evidence.
+- The renderer exception is scoped to the blocking renderer scan; verification
+  and production image gates do not consume that renderer-only policy.
 - Vercel WAF configuration, production secret provenance, production
   `WHITELIST` provenance, preview protection, and deployed one-function state
   still require manual confirmation after deployment.

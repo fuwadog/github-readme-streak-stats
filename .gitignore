@@ -37,6 +37,8 @@ coverage.xml
 renderer/__pycache__/
 __pycache__/
 *.py[cod]
+trivy-*.txt
+trivy-*.provenance
 
 # PHP/PHPUnit
 php-*/

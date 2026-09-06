@@ -10,8 +10,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # for all explicitly pinned versions below; apt fails if any pin is unavailable.
 RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
     && printf '%s\n' \
-        'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260901T000000Z trixie main' \
-        'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260901T000000Z trixie-security main' \
+        'deb [check-valid-until=yes] https://snapshot.debian.org/archive/debian/20260901T000000Z trixie main' \
+        'deb [check-valid-until=yes] https://snapshot.debian.org/archive/debian-security/20260901T000000Z trixie-security main' \
         > /etc/apt/sources.list.d/debian-snapshot.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \

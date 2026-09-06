@@ -150,7 +150,7 @@ jobs:
                   vuln-type: os,library
                   severity: HIGH,CRITICAL
                   ignore-unfixed: false
-                  trivyignores: .trivyignore
+                  ignorefile: /dev/null
                   exit-code: 1
                   format: table
                   output: trivy-verification.txt
@@ -177,7 +177,7 @@ jobs:
             - name: Build renderer image
               id: build-renderer
               if: ${{ !cancelled() }}
-              run: docker build --pull --file renderer/Dockerfile --target production --tag streak-stats-renderer .
+              run: docker buildx build --load --metadata-file renderer-build-metadata.json --pull --file renderer/Dockerfile --target production --tag streak-stats-renderer .
 
             - name: Scan renderer image with Trivy
               if: ${{ !cancelled() && steps.build-renderer.outcome == 'success' }}
@@ -207,6 +207,7 @@ jobs:
                   vuln-type: os,library
                   severity: HIGH,CRITICAL
                   ignore-unfixed: false
+                  trivyignores: /dev/null
                   exit-code: 0
                   format: json
                   output: trivy-renderer-unignored.txt
@@ -218,7 +219,11 @@ jobs:
                   set -euo pipefail
                   test -s trivy-renderer-unignored.txt
                   test -s .trivyignore
-                  image_digest="$(docker image inspect streak-stats-renderer --format '{{.Id}}')"
+                  image_digest="$(jq -r '."containerimage.digest" // empty' renderer-build-metadata.json)"
+                  if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                      printf 'Renderer OCI manifest digest is unavailable or malformed.\n' >&2
+                      exit 1
+                  fi
                   trivyignore_sha256="$(sha256sum .trivyignore | awk '{print $1}')"
                   {
                       printf 'repository=%s\n' "$GITHUB_REPOSITORY"
@@ -302,7 +307,7 @@ jobs:
                   vuln-type: os,library
                   severity: HIGH,CRITICAL
                   ignore-unfixed: false
-                  trivyignores: .trivyignore
+                  ignorefile: /dev/null
                   exit-code: 1
                   format: table
                   output: trivy-production.txt

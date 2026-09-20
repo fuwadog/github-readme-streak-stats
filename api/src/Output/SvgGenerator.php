@@ -270,6 +270,11 @@ class SvgGenerator
         return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8");
     }
 
+    private function accessibilityMetadata(string $title, string $description): string
+    {
+        return "<title>{$this->escapeSvgText($title)}</title><desc>{$this->escapeSvgText($description)}</desc>";
+    }
+
     /**
      * Get the card width from params
      *
@@ -452,8 +457,14 @@ class SvgGenerator
                 </g>";
         }
 
+        $username = is_string($params["user"] ?? null) && $params["user"] !== "" ? $params["user"] : "GitHub user";
+        $metadata = $this->accessibilityMetadata(
+            "GitHub contribution streak stats for {$username}",
+            "Contribution totals, current streak, and longest streak for {$username}.",
+        );
         $svg = "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'
                     style='isolation: isolate' viewBox='0 0 {$cardWidth} {$cardHeight}' width='{$cardWidth}px' height='{$cardHeight}px' direction='{$direction}'>
+            {$metadata}
             <style>
                 @keyframes currstreak {
                     0% { font-size: 3px; opacity: 0.2; }
@@ -578,6 +589,7 @@ class SvgGenerator
         $heightOffset = ($cardHeight - 195) / 2;
         $errorLabelOffset = $cardHeight / 2 + 10.5;
         $useAnimation = ($params["animation"] ?? "") === "true";
+        $rawMessage = $message;
         $message = $this->escapeSvgText($message);
         $animationAttribute = $useAnimation ? " style='opacity: 0; animation: fadein 0.5s linear forwards 0.3s'" : "";
         $animationCss = $useAnimation
@@ -594,7 +606,9 @@ class SvgGenerator
                 }"
             : "";
 
+        $metadata = $this->accessibilityMetadata("GitHub contribution streak stats error", $rawMessage);
         return "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' style='isolation: isolate' viewBox='0 0 {$cardWidth} {$cardHeight}' width='{$cardWidth}px' height='{$cardHeight}px'>
+            {$metadata}
             <style>
                 a {
                     fill: {$theme["dates"]};
@@ -630,7 +644,7 @@ class SvgGenerator
                     </g>
                 </g>
             </g>
-        </svg>";
+        </svg>\n";
     }
 
     /**
@@ -862,6 +876,7 @@ class SvgGenerator
                 return [
                     "contentType" => "image/svg+xml",
                     "status" => $this->getPngFallbackStatus($errorCode),
+                    "headers" => ["X-Output-Fallback" => "svg"],
                     "body" => $this->removeAnimations(
                         $this->generateErrorCard(
                             $this->getPngFallbackMessage($output, $errorCode, $error),

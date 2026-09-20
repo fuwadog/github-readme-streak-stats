@@ -36,6 +36,32 @@ final class PngRendererTest extends TestCase
         );
     }
 
+    /** @return iterable<string, array{array<string, int>}> */
+    public static function invalidRendererLimits(): iterable
+    {
+        yield "zero connect timeout" => [["connectTimeoutMs" => 0]];
+        yield "zero read timeout" => [["readTimeoutMs" => 0]];
+        yield "zero SVG limit" => [["maxSvgBytes" => 0]];
+        yield "zero PNG limit" => [["maxPngBytes" => 0]];
+        yield "zero frame limit" => [["maxFrameBytes" => 0]];
+        yield "oversized SVG limit" => [["maxSvgBytes" => PngRendererClient::DEFAULT_MAX_SVG_BYTES + 1]];
+        yield "oversized PNG limit" => [["maxPngBytes" => PngRendererClient::DEFAULT_MAX_PNG_BYTES + 1]];
+        yield "oversized frame limit" => [["maxFrameBytes" => PngRendererClient::DEFAULT_MAX_FRAME_BYTES + 1]];
+        yield "zero dimension limit" => [["maxDimension" => 0]];
+        yield "oversized dimension limit" => [["maxDimension" => PngRendererClient::DEFAULT_MAX_DIMENSION + 1]];
+        yield "zero pixel limit" => [["maxPixels" => 0]];
+        yield "oversized pixel limit" => [["maxPixels" => PngRendererClient::DEFAULT_MAX_PIXELS + 1]];
+    }
+
+    /** @param array<string, int> $limits */
+    #[\PHPUnit\Framework\Attributes\DataProvider("invalidRendererLimits")]
+    public function testInvalidRendererLimitsAreRejected(array $limits): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new PngRendererClient(null, ...$limits);
+    }
+
     public function testPreferredWebRendererSocketTakesPrecedenceOverAliases(): void
     {
         $capture = $this->runRenderer(
@@ -160,6 +186,73 @@ final class PngRendererTest extends TestCase
         (new PngRendererClient(null, maxSvgBytes: 4))->render("<svg/>", self::WIDTH, self::HEIGHT);
     }
 
+    public function testRequestFrameBoundIsEnforced(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("request_too_large");
+
+        (new PngRendererClient("/tmp/missing-renderer.sock", maxFrameBytes: 32))->render(
+            "<svg/>",
+            self::WIDTH,
+            self::HEIGHT,
+        );
+    }
+
+    public function testMissingConfiguredRendererSocketIsRejected(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("renderer_unavailable");
+
+        (new PngRendererClient("/tmp/missing-renderer.sock"))->render("<svg/>", self::WIDTH, self::HEIGHT);
+    }
+
+    public function testUnconfiguredRendererIsRejected(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("renderer_unavailable");
+
+        (new PngRendererClient(null))->render("<svg/>", self::WIDTH, self::HEIGHT);
+    }
+
+    public function testEmptyRendererResponseIsRejected(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("malformed_response");
+
+        $this->runRenderer("", function (string $socket): string {
+            return (new PngRendererClient($socket))->render("<svg/>", self::WIDTH, self::HEIGHT);
+        });
+    }
+
+    public function testRendererResponseRequiresContentLength(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("malformed_response");
+
+        $this->runRenderer("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nConnection: close\r\n\r\n", function (
+            string $socket,
+        ): string {
+            return (new PngRendererClient($socket))->render("<svg/>", self::WIDTH, self::HEIGHT);
+        });
+    }
+
+    public function testRendererTransferEncodingIsRejected(): void
+    {
+        $this->expectException(PngRendererException::class);
+        $this->expectExceptionMessage("malformed_response");
+
+        $this->runRenderer(
+            "HTTP/1.1 200 OK\r\n" .
+                "Content-Type: image/png\r\n" .
+                "Content-Length: 0\r\n" .
+                "Transfer-Encoding: chunked\r\n" .
+                "Connection: close\r\n\r\n",
+            function (string $socket): string {
+                return (new PngRendererClient($socket))->render("<svg/>", self::WIDTH, self::HEIGHT);
+            },
+        );
+    }
+
     public function testPngResponseBoundIsEnforced(): void
     {
         $this->expectException(PngRendererException::class);
@@ -192,11 +285,28 @@ final class PngRendererTest extends TestCase
         $this->assertStringNotContainsString("curl_", $source);
     }
 
+    public function testRendererProtocolLimitsMatchTheSidecarContract(): void
+    {
+        $this->assertSame(524_288, PngRendererClient::DEFAULT_MAX_SVG_BYTES);
+        $this->assertSame(16_777_216, PngRendererClient::DEFAULT_MAX_PNG_BYTES);
+        $this->assertSame(20_971_520, PngRendererClient::DEFAULT_MAX_FRAME_BYTES);
+        $this->assertSame(16_384, PngRendererClient::DEFAULT_MAX_HEADER_BYTES);
+        $this->assertSame(4_096, PngRendererClient::DEFAULT_MAX_DIMENSION);
+        $this->assertSame(16_777_216, PngRendererClient::DEFAULT_MAX_PIXELS);
+    }
+
     public function testInvalidDimensionsAreRejectedBeforeRendererConnection(): void
     {
-        foreach ([[0, self::HEIGHT], [-1, self::HEIGHT], [self::WIDTH, 0], [4097, self::HEIGHT]] as [$width, $height]) {
+        foreach (
+            [[0, self::HEIGHT], [-1, self::HEIGHT], [self::WIDTH, 0], [4097, self::HEIGHT], [11, 10]]
+            as [$width, $height]
+        ) {
             try {
-                (new PngRendererClient("/tmp/renderer-must-not-connect.sock"))->render("<svg/>", $width, $height);
+                (new PngRendererClient("/tmp/renderer-must-not-connect.sock", maxPixels: 100))->render(
+                    "<svg/>",
+                    $width,
+                    $height,
+                );
                 $this->fail("Invalid renderer dimensions were accepted.");
             } catch (PngRendererException $error) {
                 $this->assertSame("invalid_dimensions", $error->rendererCode);
@@ -359,6 +469,12 @@ final class PngRendererTest extends TestCase
     /** @return array{request:string,body:string} */
     private function runRenderer(string $response, callable $render): array
     {
+        if (PHP_OS_FAMILY === "Windows") {
+            $this->markTestSkipped(
+                "The renderer integration fixture requires Unix-domain sockets; run it in Docker/POSIX.",
+            );
+        }
+
         $socket = tempnam(sys_get_temp_dir(), "png-renderer-");
         $ready = tempnam(sys_get_temp_dir(), "png-renderer-ready-");
         $capture = tempnam(sys_get_temp_dir(), "png-renderer-capture-");

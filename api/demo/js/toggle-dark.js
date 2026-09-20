@@ -42,6 +42,7 @@ function darkmode() {
   document.querySelector("#darkmode-icon").innerText = "🌞";
   setCookie("darkmode", "on", 9999);
   document.body.setAttribute("data-theme", "dark");
+  updateThemeControl(true);
 }
 
 /**
@@ -51,6 +52,15 @@ function lightmode() {
   document.querySelector("#darkmode-icon").innerText = "🌙";
   setCookie("darkmode", "off", 9999);
   document.body.removeAttribute("data-theme");
+  updateThemeControl(false);
+}
+
+function updateThemeControl(isDark) {
+  const control = document.querySelector(".darkmode");
+  if (!control) return;
+  control.setAttribute("aria-pressed", String(isDark));
+  control.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+  control.title = isDark ? "Switch to light mode" : "Switch to dark mode";
 }
 
 /**
@@ -70,3 +80,5 @@ function toggleTheme() {
 if (getCookie("darkmode") === null && window.matchMedia("(prefers-color-scheme: dark)").matches) {
   darkmode();
 }
+
+document.querySelector(".darkmode")?.addEventListener("click", toggleTheme);

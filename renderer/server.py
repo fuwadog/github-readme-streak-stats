@@ -26,6 +26,7 @@ import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ElementTree
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -85,11 +86,28 @@ class RendererConfig:
     inkscape: str = "/usr/bin/inkscape"
     max_body_bytes: int = MAX_BODY_BYTES
     max_svg_bytes: int = MAX_SVG_BYTES
+    max_svg_elements: int = MAX_SVG_ELEMENTS
+    max_svg_depth: int = MAX_SVG_DEPTH
     max_dimension: int = MAX_DIMENSION
     max_pixels: int = MAX_PIXELS
     max_output_bytes: int = MAX_OUTPUT_BYTES
     max_deadline_ms: int = MAX_DEADLINE_MS
     max_concurrency: int = MAX_CONCURRENCY
+
+    def __post_init__(self) -> None:
+        limits = (
+            (self.max_body_bytes, MAX_BODY_BYTES),
+            (self.max_svg_bytes, MAX_SVG_BYTES),
+            (self.max_svg_elements, MAX_SVG_ELEMENTS),
+            (self.max_svg_depth, MAX_SVG_DEPTH),
+            (self.max_dimension, MAX_DIMENSION),
+            (self.max_pixels, MAX_PIXELS),
+            (self.max_output_bytes, MAX_OUTPUT_BYTES),
+            (self.max_deadline_ms, MAX_DEADLINE_MS),
+            (self.max_concurrency, MAX_CONCURRENCY),
+        )
+        if any(value < 1 or value > maximum for value, maximum in limits):
+            raise ValueError("renderer limits exceed the protocol bounds")
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,9 +187,9 @@ def _read_http_request(
     received = bytearray()
     separator = b"\r\n\r\n"
     while separator not in received:
-        if len(received) >= MAX_HEADER_BYTES:
+        if len(received) >= MAX_HEADER_BYTES + len(separator):
             raise RendererError(431, "request headers too large")
-        remaining = MAX_HEADER_BYTES - len(received)
+        remaining = MAX_HEADER_BYTES + len(separator) - len(received)
         connection.settimeout(
             min(
                 PROTOCOL_READ_TIMEOUT_SECONDS,
@@ -188,10 +206,12 @@ def _read_http_request(
         if not chunk:
             raise RendererError(400, "incomplete HTTP request")
         received.extend(chunk)
-        if len(received) > MAX_HEADER_BYTES and separator not in received:
+        if len(received) > MAX_HEADER_BYTES + len(separator) and separator not in received:
             raise RendererError(431, "request headers too large")
 
     header_bytes, body = bytes(received).split(separator, 1)
+    if len(header_bytes) > MAX_HEADER_BYTES:
+        raise RendererError(431, "request headers too large")
     try:
         header_lines = header_bytes.decode("ascii").split("\r\n")
     except UnicodeDecodeError as error:
@@ -244,7 +264,7 @@ def _read_http_request(
             raise RendererError(400, "incomplete request body")
         body += chunk
     if len(body) != body_length:
-        body = body[:body_length]
+        raise RendererError(400, "request body is longer than content-length")
     return HttpRequest(method, target, headers, body)
 
 
@@ -278,8 +298,10 @@ def _validate_svg(svg: str, config: RendererConfig) -> None:
     while stack:
         element, depth = stack.pop()
         count += 1
-        if count > MAX_SVG_ELEMENTS or depth > MAX_SVG_DEPTH:
+        if count > config.max_svg_elements or depth > config.max_svg_depth:
             raise RendererError(400, "SVG structure is too complex")
+        if not isinstance(element.tag, str):
+            raise RendererError(400, "invalid SVG XML")
         local_name = element.tag.rsplit("}", 1)[-1].lower()
         if local_name in {"script", "foreignobject", "iframe", "object", "image"}:
             raise RendererError(400, "external SVG content is not permitted")
@@ -401,25 +423,27 @@ def _terminate_process(process: subprocess.Popen[bytes]) -> None:
         else:  # pragma: no cover - renderer image is Linux
             process.terminate()
         process.wait(timeout=0.5)
-    except (ProcessLookupError, subprocess.TimeoutExpired):
+    except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
         try:
             if os.name == "posix":
                 os.killpg(process.pid, signal.SIGKILL)
             else:  # pragma: no cover
                 process.kill()
             process.wait(timeout=0.5)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
+        except (OSError, ProcessLookupError, subprocess.TimeoutExpired):
             LOGGER.error("renderer child did not exit after termination")
 
 
 def _validate_png(data: bytes, request: RenderRequest, config: RendererConfig) -> None:
     if (
         len(data) > config.max_output_bytes
-        or len(data) < 24
+        or len(data) < 33
         or not data.startswith(PNG_SIGNATURE)
     ):
         raise RendererError(502, "renderer returned invalid PNG")
     if int.from_bytes(data[8:12], "big") != 13 or data[12:16] != b"IHDR":
+        raise RendererError(502, "renderer returned invalid PNG")
+    if zlib.crc32(data[12:29]) & 0xFFFFFFFF != int.from_bytes(data[29:33], "big"):
         raise RendererError(502, "renderer returned invalid PNG")
     output_width = int.from_bytes(data[16:20], "big")
     output_height = int.from_bytes(data[20:24], "big")

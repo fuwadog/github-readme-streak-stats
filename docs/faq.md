@@ -100,3 +100,15 @@ Successful cards are cacheable for the configured `CACHE_TTL` (which takes prece
 ### Can I use the demo offline, and is PNG available?
 
 Yes. The demo uses fixture data and can be exercised offline without a GitHub token; keep it isolated from the card API and do not use production credentials in it. SVG works on Vercel. PNG requires Inkscape, so it is available on a self-hosted deployment that provides the renderer (preferably as an internal, resource-limited sidecar), but is not supported by the canonical Vercel deployment because Vercel's PHP behavior is unchanged and Inkscape is not installed there. A Vercel PNG request returns a controlled SVG error-card fallback with HTTP status `500` and `image/svg+xml`, not a successful PNG; use `type=svg` for public embeds.
+
+### Which implementation contracts should operators use?
+
+The documented names identify the implemented contracts; they are not new
+configuration switches: `API_RESPONSE_V1` covers status, body, and content
+type; `RATE_LIMIT_V1` covers the self-hosted 100-per-minute file limit and the
+serverless fail-closed external-limiter assertion; `CACHE_KEY_V1` covers the
+normalized successful-card cache key; `RENDERER_PROTOCOL_V1` covers the
+private Unix-socket `/health` and `/render` protocol; and `PREVIEW_REQUEST_V1`
+covers bounded preview inputs. See [the operations runbook](operations.md) for
+health checks, evidence, and rollback. These contracts do not change public
+routes or Vercel environment-variable names or values.

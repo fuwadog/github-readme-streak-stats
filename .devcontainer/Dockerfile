@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 
-FROM docker.io/library/node:24.7.0-bookworm-slim@sha256:0104d9447ea3ddf7373643be7f9915fc7b7c896e41d0d33229338e457217cd78 AS node
+# Keep development checks on the same canonical Node.js 24.20.0 image as the
+# verification target in the root Dockerfile.
+FROM docker.io/library/node:24.20.0-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0 AS node
 
 FROM mcr.microsoft.com/devcontainers/php:1-8.4-bookworm@sha256:5b7eb0fa180636ba5a610bb0757a202c95de7665bb7e45e9f7961ee331889dd8
 
@@ -16,7 +18,7 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
         libicu-dev=72.1-3+deb12u1 && \
     docker-php-ext-configure intl && \
     docker-php-ext-install -j"$(nproc)" intl && \
-    test "$(node --version)" = "v24.7.0" && \
+    test "$(node --version)" = "v24.20.0" && \
     php --version | grep -q '^PHP 8\.4\.' && \
     php -m | grep -qx curl && \
     php -m | grep -qx intl && \

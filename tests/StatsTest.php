@@ -216,8 +216,7 @@ final class StatsTest extends TestCase
         $firstDeadline = $deadline->getValue($client);
         $secondHandle = $client->getGraphQLCurlHandle("query", "fixture-token");
         $secondDeadline = $deadline->getValue($client);
-        curl_close($firstHandle);
-        curl_close($secondHandle);
+        unset($firstHandle, $secondHandle);
 
         $this->assertIsInt($firstDeadline);
         $this->assertSame($firstDeadline, $secondDeadline);
@@ -237,10 +236,14 @@ final class StatsTest extends TestCase
     public function testPartialHistoricalResultsAbortWithoutReturningPartialData(): void
     {
         $client = new PartialResponseGitHubClient();
+        $currentYear = (int) date("Y");
+        $years = range(2016, $currentYear - 1);
+        @unlink(graphCachePath(buildCacheKeyV1("DenverCoder1", ["starting_year" => 2016], [$currentYear])));
+        @unlink(graphCachePath(buildCacheKeyV1("DenverCoder1", ["starting_year" => 2016], $years)));
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage("Failed to retrieve contributions for year");
-        getContributionGraphs("DenverCoder1", null, $client);
+        getContributionGraphs("DenverCoder1", 2016, $client);
     }
 
     /**

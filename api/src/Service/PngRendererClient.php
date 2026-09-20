@@ -16,11 +16,12 @@ use RuntimeException;
  */
 final class PngRendererClient
 {
-    public const DEFAULT_MAX_SVG_BYTES = 2_097_152;
+    public const DEFAULT_MAX_SVG_BYTES = 524_288;
     public const DEFAULT_MAX_PNG_BYTES = 16_777_216;
     public const DEFAULT_MAX_FRAME_BYTES = 20_971_520;
     public const DEFAULT_MAX_HEADER_BYTES = 16_384;
     public const DEFAULT_MAX_DIMENSION = 4096;
+    public const DEFAULT_MAX_PIXELS = 16_777_216;
     public const DEFAULT_CONNECT_TIMEOUT_MS = 250;
     public const DEFAULT_READ_TIMEOUT_MS = 2_000;
     private const MAX_RENDERER_DEADLINE_MS = 10_000;
@@ -38,16 +39,27 @@ final class PngRendererClient
         private readonly int $maxPngBytes = self::DEFAULT_MAX_PNG_BYTES,
         private readonly int $maxFrameBytes = self::DEFAULT_MAX_FRAME_BYTES,
         private readonly int $maxDimension = self::DEFAULT_MAX_DIMENSION,
+        private readonly int $maxPixels = self::DEFAULT_MAX_PIXELS,
     ) {
         $this->socketPath = $this->resolveSocketPath($socketPath);
         if ($this->connectTimeoutMs <= 0 || $this->readTimeoutMs <= 0) {
             throw new \InvalidArgumentException("Renderer timeouts must be positive.");
         }
-        if ($this->maxSvgBytes <= 0 || $this->maxPngBytes <= 0 || $this->maxFrameBytes <= 0) {
+        if (
+            $this->maxSvgBytes <= 0 ||
+            $this->maxSvgBytes > self::DEFAULT_MAX_SVG_BYTES ||
+            $this->maxPngBytes <= 0 ||
+            $this->maxPngBytes > self::DEFAULT_MAX_PNG_BYTES ||
+            $this->maxFrameBytes <= 0 ||
+            $this->maxFrameBytes > self::DEFAULT_MAX_FRAME_BYTES
+        ) {
             throw new \InvalidArgumentException("Renderer limits must be positive.");
         }
-        if ($this->maxDimension <= 0) {
+        if ($this->maxDimension <= 0 || $this->maxDimension > self::DEFAULT_MAX_DIMENSION) {
             throw new \InvalidArgumentException("Renderer dimensions must be positive.");
+        }
+        if ($this->maxPixels <= 0 || $this->maxPixels > self::DEFAULT_MAX_PIXELS) {
+            throw new \InvalidArgumentException("Renderer pixel limit must be positive.");
         }
     }
 
@@ -100,7 +112,7 @@ final class PngRendererClient
 
         $socket = $this->connect();
         try {
-            $deadline = microtime(true) + $this->readTimeoutMs / 1000;
+            $deadline = microtime(true) + min($this->readTimeoutMs, self::MAX_RENDERER_DEADLINE_MS) / 1000;
             $this->writeAll($socket, $request, $deadline);
             $response = $this->readResponse($socket, $deadline);
         } finally {
@@ -160,7 +172,13 @@ final class PngRendererClient
 
     private function validateDimensions(int $width, int $height): void
     {
-        if ($width <= 0 || $height <= 0 || $width > $this->maxDimension || $height > $this->maxDimension) {
+        if (
+            $width <= 0 ||
+            $height <= 0 ||
+            $width > $this->maxDimension ||
+            $height > $this->maxDimension ||
+            $width * $height > $this->maxPixels
+        ) {
             throw $this->error("invalid_dimensions");
         }
     }
@@ -211,11 +229,11 @@ final class PngRendererClient
         $buffer = "";
         $separator = "\r\n\r\n";
         while (($headerEnd = strpos($buffer, $separator)) === false) {
-            if (strlen($buffer) >= self::DEFAULT_MAX_HEADER_BYTES) {
+            if (strlen($buffer) >= self::DEFAULT_MAX_HEADER_BYTES + strlen($separator)) {
                 throw $this->error("response_headers_too_large");
             }
             $this->waitFor($socket, true, $deadline);
-            $chunk = @fread($socket, min(8192, self::DEFAULT_MAX_HEADER_BYTES + 1 - strlen($buffer)));
+            $chunk = @fread($socket, min(8192, self::DEFAULT_MAX_HEADER_BYTES + strlen($separator) - strlen($buffer)));
             if ($chunk === false) {
                 throw $this->error("renderer_read_failed");
             }
@@ -223,12 +241,18 @@ final class PngRendererClient
                 throw $this->error("malformed_response");
             }
             $buffer .= $chunk;
-            if (strlen($buffer) > self::DEFAULT_MAX_HEADER_BYTES && strpos($buffer, $separator) === false) {
+            if (
+                strlen($buffer) > self::DEFAULT_MAX_HEADER_BYTES + strlen($separator) &&
+                strpos($buffer, $separator) === false
+            ) {
                 throw $this->error("response_headers_too_large");
             }
         }
 
         $headerBytes = substr($buffer, 0, $headerEnd);
+        if ($headerEnd > self::DEFAULT_MAX_HEADER_BYTES) {
+            throw $this->error("response_headers_too_large");
+        }
         $body = substr($buffer, $headerEnd + strlen($separator));
         $lines = explode("\r\n", $headerBytes);
         $statusLine = array_shift($lines);
@@ -244,7 +268,11 @@ final class PngRendererClient
             }
             $name = strtolower(substr($line, 0, $colon));
             $value = trim(substr($line, $colon + 1));
-            if ($name === "" || isset($headers[$name])) {
+            if (
+                $name === "" ||
+                preg_match('/^[!#$%&\'*+.^_`|~0-9A-Za-z-]+$/D', $name) !== 1 ||
+                isset($headers[$name])
+            ) {
                 throw $this->error("malformed_response");
             }
             $headers[$name] = $value;
@@ -255,6 +283,9 @@ final class PngRendererClient
             throw $this->error("malformed_response");
         }
         $length = (int) $contentLength;
+        if ($length > $this->maxPngBytes) {
+            throw $this->error("response_too_large");
+        }
         if ($headerEnd + strlen($separator) + $length > $this->maxFrameBytes) {
             throw $this->error("response_too_large");
         }

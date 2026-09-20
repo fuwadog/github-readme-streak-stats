@@ -2,7 +2,8 @@
 
 This file records the changes made during the current cleanup and hardening
 effort. The work is intentionally unreleased until the branch is reviewed,
-committed, pushed, and deployed by the repository owner.
+committed, pushed, and deployed by the repository owner. Repository and
+container verification below is not production evidence.
 
 ## Unreleased
 
@@ -82,27 +83,33 @@ committed, pushed, and deployed by the repository owner.
 - Added renderer health, protocol, bounds, timeout, capacity, and invalid PNG
   coverage.
 
-### Tests and verification
+### Repository and container verification (not production evidence)
 
 - Replaced live GitHub-coupled statistics tests with deterministic fixtures and
   injected test doubles.
 - Added API security, demo security, PNG renderer, animation, route, fallback,
   escaping, cache, and direct-PHP exposure coverage.
-- Linux container verification passed with 107 PHPUnit tests and 6,768
-  assertions.
-- Renderer unit tests passed: 11 tests.
+- Linux container verification passed with 137 PHPUnit tests and 6,886
+  assertions at 80.07% line coverage.
+- Renderer unit tests passed: 13 tests.
+- The production image and Docker Compose build passed. The production
+  container loaded PHP `intl`; API GET and HEAD probes returned valid HTTP 200
+  SVG responses, and the Compose logs were free of startup warnings.
+- Host PHP 8.5 verification passed without coverage with 137 tests and 6,847
+  assertions; 15 platform skips remain for Windows-only Unix-socket cases.
 - PHPStan, Composer validation/audit/checks, npm audit, Prettier, actionlint,
   Docker Compose validation, image builds, health checks, and local smoke tests
   passed in the available verification environment.
-- Verified the allowlisted `fuwadog` canonical endpoint returned HTTP 200 with
-  an SVG response and public cache headers.
-- Verified denied-user behavior returns HTTP 403 with the whitelist message and
-  non-cacheable headers.
+- Verified the allowlist and denied-user cases with deterministic repository
+  tests; this does not verify the deployed production allowlist.
+- Production status, cache headers, WAF coverage, secret provenance, and
+  deployed routes remain pending the manual release-evidence checklist.
 
 ### Tooling, containers, and CI
 
-- Standardized the Node.js toolchain on version 24 for development and CI
-  tooling.
+- Standardized the Node.js toolchain on the `24.x` line for development and CI
+  tooling; the verified source image is Node `24.20.0`, while Node is not the
+  Vercel application runtime.
 - Added reproducible npm lockfile installation and formatter validation.
 - Expanded Composer scripts for tests, linting, static analysis, coverage, and
   aggregate checks.
@@ -113,6 +120,10 @@ committed, pushed, and deployed by the repository owner.
 - Expanded dependency automation to Composer, npm, Docker, and GitHub Actions.
 - Hardened production and development container layouts, extensions, runtime
   users, health checks, and environment handling.
+- Removed obsolete PHP 8.5-deprecated `curl_close()` calls so deprecation text
+  cannot contaminate SVG responses.
+- Retained the ICU runtime library required by PHP `intl` after removing Docker
+  build headers, and cleaned the Apache container configuration.
 - Added deployment smoke checks for routes, whitelist behavior, cache headers,
   missing-token handling, direct-PHP exposure, renderer health, and fallback
   behavior.
@@ -156,5 +167,6 @@ committed, pushed, and deployed by the repository owner.
   `WHITELIST` provenance, preview protection, and deployed one-function state
   still require manual confirmation after deployment.
 - The current Vercel production deployment predates this local work. Its stale
-  route and PNG responses are not evidence against the current branch.
+  route and PNG responses are not evidence for or against the current branch;
+  deploy-time evidence is still required.
 - No commit, push, or deployment was performed as part of this effort.

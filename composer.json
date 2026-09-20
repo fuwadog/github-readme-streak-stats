@@ -41,8 +41,11 @@
 		"format-check": "npx --no-install prettier --check \"**/*.{php,md,js,css}\"",
 		"format": "npx --no-install prettier --write \"**/*.{php,md,js,css}\"",
 		"lint-fix": "@format",
-		"analyse": "phpstan analyse api/src --level=1 --no-progress",
-		"coverage": "phpunit --configuration tests/phpunit/phpunit.xml --coverage-clover coverage.xml --coverage-text --do-not-cache-result",
+		"analyse": "phpstan analyse api --level=1 --no-progress",
+		"coverage": [
+			"phpunit --configuration tests/phpunit/phpunit.xml --coverage-text --do-not-cache-result",
+			"php scripts/check-coverage.php coverage.xml"
+		],
 		"check": [
 			"composer validate --strict --no-check-publish",
 			"@regression",

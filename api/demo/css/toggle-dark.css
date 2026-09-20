@@ -1,4 +1,4 @@
-a.darkmode {
+button.darkmode {
   position: fixed;
   top: 2em;
   right: 2em;
@@ -16,16 +16,19 @@ a.darkmode {
     0 1px 2px rgb(0 0 0 / 24%);
   transition: 0.2s ease-in box-shadow;
   text-decoration: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
 }
 
-a.darkmode:hover {
+button.darkmode:hover {
   box-shadow:
     0 0 6px rgb(0 0 0 / 16%),
     0 3px 6px rgb(0 0 0 / 23%);
 }
 
 @media only screen and (max-width: 600px) {
-  a.darkmode {
+  button.darkmode {
     top: unset;
     bottom: 1em;
     right: 1em;

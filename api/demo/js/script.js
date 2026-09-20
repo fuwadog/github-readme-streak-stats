@@ -2,6 +2,8 @@
 /*eslint no-undef: "error"*/
 
 const preview = {
+  requestSequence: 0,
+  requestController: null,
   /**
    * Default values - if set to these values, the params do not need to appear in the query string
    */
@@ -26,6 +28,24 @@ const preview = {
    * Update the preview with the current parameters
    */
   update() {
+    const requestSequence = ++this.requestSequence;
+    if (this.requestController) {
+      this.requestController.abort();
+    }
+    this.requestController = null;
+    const output = document.querySelector(".output");
+    const status = document.querySelector("#preview-status");
+    const setStatus = (message, isError = false) => {
+      if (requestSequence !== this.requestSequence) {
+        return;
+      }
+      output.setAttribute("aria-busy", "false");
+      status.textContent = message;
+      status.classList.toggle("error", isError);
+    };
+    output.setAttribute("aria-busy", "true");
+    status.textContent = "Loading preview…";
+    status.classList.remove("error");
     // get parameter values from all .param elements
     const params = this.objectFromElements(document.querySelectorAll(".param"));
     // convert sections to hide_... parameters
@@ -46,7 +66,10 @@ const preview = {
       const repoLink = "https://git.io/streak-stats";
       const md = `[![GitHub Streak](${imageURL})](${repoLink})`;
       const html = `<a href="${repoLink}"><img src="${imageURL}" alt="GitHub Streak" /></a>`;
-      document.querySelector(".output img").src = demoImageURL;
+      const image = document.querySelector(".output img");
+      image.onload = () => setStatus("Preview loaded.");
+      image.onerror = () => setStatus("Unable to load the preview. Please check the username and try again.", true);
+      image.src = demoImageURL;
       document.querySelector(".md code").innerText = md;
       document.querySelector(".html code").innerText = html;
       document.querySelector(".copy-md").parentElement.style.display = "block";
@@ -55,10 +78,28 @@ const preview = {
       document.querySelector(".output .json").style.display = "none";
       document.querySelector(".copy-json").parentElement.style.display = "none";
     } else {
-      fetch(demoImageURL)
-        .then((response) => response.json())
-        .then((data) => (document.querySelector(".output .json pre").innerText = JSON.stringify(data, null, 2)))
-        .catch(console.error);
+      const controller = new AbortController();
+      this.requestController = controller;
+      fetch(demoImageURL, { signal: controller.signal })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Preview request failed with status ${response.status}.`);
+          }
+          return response.json();
+        })
+        .then((data) => {
+          if (requestSequence !== this.requestSequence) {
+            return;
+          }
+          document.querySelector(".output .json pre").innerText = JSON.stringify(data, null, 2);
+          setStatus("Preview loaded.");
+        })
+        .catch((error) => {
+          if (error.name === "AbortError" || requestSequence !== this.requestSequence) {
+            return;
+          }
+          setStatus("Unable to load the preview. Please try again.", true);
+        });
       document.querySelector(".json code").innerText = imageURL;
       document.querySelector(".copy-md").parentElement.style.display = "none";
       document.querySelector(".copy-html").parentElement.style.display = "none";
@@ -85,9 +126,13 @@ const preview = {
     const selectElement = document.querySelector("#properties");
     // if no property passed, get the currently selected property
     const propertyName = property || selectElement.value;
+    const propertyOption = Array.prototype.find.call(selectElement.options, (option) => option.value === propertyName);
+    if (!propertyOption) {
+      return;
+    }
     if (!selectElement.disabled) {
       // disable option in menu
-      Array.prototype.find.call(selectElement.options, (o) => o.value === propertyName).disabled = true;
+      propertyOption.disabled = true;
       // select first unselected option
       const firstAvailable = Array.prototype.find.call(selectElement.options, (o) => !o.disabled);
       if (firstAvailable) {
@@ -364,6 +409,13 @@ const preview = {
         // set parameter value
         paramInput.value = val;
       } else {
+        const propertyOption = Array.prototype.find.call(
+          document.querySelector("#properties").options,
+          (option) => option.value === key,
+        );
+        if (!propertyOption) {
+          return;
+        }
         // add advanced property
         document.querySelector("details.advanced").open = true;
         preview.addProperty(key, searchParams.getAll(key).join(","));

@@ -72,6 +72,7 @@ If the `theme` parameter is specified, any color customizations specified will b
 |           `type`           |             Output format (Default: `svg`)             |                                  Current options: `svg`, `png` or `json`                                  |
 |           `mode`           |             Streak mode (Default: `daily`)             |                 `daily` (contribute daily) or `weekly` (contribute once per Sun-Sat week)                 |
 |       `exclude_days`       | List of days of the week to exclude from daily streaks |       Comma-separated list of day abbreviations (Sun, Mon, Tue, Wed, Thu, Fri, Sat) e.g. `Sun,Sat`        |
+|        `animation`         |    Opt in to animated SVG output (Default: `false`)    |                                             `true` (SVG only)                                             |
 |    `disable_animations`    |       Disable SVG animations (Default: `false`)        |                                             `true` or `false`                                             |
 |        `card_width`        |      Width of the card in pixels (Default: `495`)      |                            Positive integer, minimum width is 100px per column                            |
 |       `card_height`        |     Height of the card in pixels (Default: `195`)      |                                 Positive integer, minimum height is 170px                                 |
@@ -79,6 +80,11 @@ If the `theme` parameter is specified, any color customizations specified will b
 |   `hide_current_streak`    |       Hide the current streak (Default: `false`)       |                                             `true` or `false`                                             |
 |   `hide_longest_streak`    |       Hide the longest streak (Default: `false`)       |                                             `true` or `false`                                             |
 |      `starting_year`       |             Starting year of contributions             | Integer from `2005` through the current year, eg. `2017`. By default, your account creation year is used. |
+
+SVG is static by default. `animation=true` opts in to SVG-only transitions,
+ember effects, and current-streak count-up; `disable_animations=true` takes
+precedence, and `prefers-reduced-motion` also disables animation without hiding
+content. PNG and JSON remain static.
 
 ### 🖌 Themes
 
@@ -250,6 +256,9 @@ The production deployment configuration is protected by this contract: keep the 
 
 Repository checks and deployed Vercel evidence are different release gates. Before calling a release complete:
 
+Use the [operations runbook](docs/operations.md) for renderer health, cache and
+limiter checks, smoke requests, evidence retention, and rollback.
+
 - [ ] Record the Vercel project, production deployment, `vercel` branch, source commit, and previous known-good deployment ID.
 - [ ] Confirm the one-function route contract and repository-root settings are unchanged.
 - [ ] Confirm `TOKEN`, `TOKENn`, and the user-managed `WHITELIST` are encrypted **Production** variables; do not record their values. The current canonical production policy must continue to include `fuwadog`.
@@ -298,7 +307,7 @@ You can transfer the files to any webserver using FTP or other means, then refer
 
 ### 🐳 Docker
 
-Docker is a great option for self-hosting with full control over your environment. All features are supported including PNG rendering with Inkscape. Expand the instructions below to learn how to deploy with Docker.
+Docker is a great option for self-hosting with full control over your environment. The production image supports SVG and JSON output. Use the Compose deployment to add the private, isolated PNG renderer. Expand the instructions below to learn how to deploy with Docker.
 
 <details>
   <summary><b>Instructions for deploying with Docker</b></summary>
@@ -336,6 +345,16 @@ Docker is a great option for self-hosting with full control over your environmen
    ```
 
 7. Visit http://localhost:8080 to access your self-hosted instance
+
+For PNG rendering, use the isolated renderer with Docker Compose instead of the
+single web container:
+
+```bash
+docker compose up -d --build
+```
+
+The renderer is available only through its private socket and is not exposed as
+a public port. Stop the stack with `docker compose down` when finished.
 
 </details>
 

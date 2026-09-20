@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Client;
 
+use App\Exception\ApiException;
+
 class GitHubClient
 {
     private const MAX_ATTEMPTS = 100;
+    private const MAX_CONCURRENT_REQUESTS = 8;
     private const MAX_RETRIES_PER_REQUEST = 1;
     private const VERCEL_HOBBY_MAX_DURATION_SECONDS = 10;
     private const CLEANUP_MARGIN_SECONDS = 2;
@@ -18,6 +21,7 @@ class GitHubClient
     private array $redactionTokens = [];
     private int $attemptsUsed = 0;
     private ?int $deadlineNanoseconds = null;
+    private ?int $retryAfterSeconds = null;
 
     public function __construct(?array $tokens = null)
     {
@@ -141,7 +145,7 @@ class GitHubClient
     }
 
     /**
-     * @return array{contents:string, decoded:mixed, curlErrno:int, httpCode:int, message:string}
+     * @return array{contents:string, decoded:mixed, curlErrno:int, httpCode:int, message:string, retryAfter:?int}
      */
     private function readCurlResponse(
         \CurlHandle $handle,
@@ -153,6 +157,11 @@ class GitHubClient
         $contents = $providedContents ?? curl_multi_getcontent($handle);
         $curlErrno = curl_errno($handle);
         $httpCode = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
+        $retryAfter = defined("CURLINFO_RETRY_AFTER") ? curl_getinfo($handle, CURLINFO_RETRY_AFTER) : null;
+        $normalizedRetryAfter = $this->normalizeRetryAfter($retryAfter);
+        if ($normalizedRetryAfter !== null) {
+            $this->retryAfterSeconds = $normalizedRetryAfter;
+        }
         if ($contents === false || $contents === "") {
             $this->logRequestFailure("transport", $httpCode, null, $curlErrno);
             $contents = "";
@@ -174,7 +183,26 @@ class GitHubClient
             "curlErrno" => $curlErrno,
             "httpCode" => $httpCode,
             "message" => $message,
+            "retryAfter" => $this->retryAfterSeconds,
         ];
+    }
+
+    private function normalizeRetryAfter(mixed $retryAfter): ?int
+    {
+        if (is_int($retryAfter)) {
+            return $retryAfter >= 0 ? $retryAfter : null;
+        }
+        if (is_string($retryAfter) && preg_match("/^\d+$/", $retryAfter) === 1) {
+            return (int) $retryAfter;
+        }
+        return null;
+    }
+
+    private function isRetryableResponse(array $response): bool
+    {
+        return $response["curlErrno"] === CURLE_OPERATION_TIMEDOUT ||
+            $response["httpCode"] === 429 ||
+            ($response["httpCode"] >= 500 && $response["httpCode"] <= 599);
     }
 
     private function isUnauthorizedResponse(int $httpCode, mixed $decoded, string $message): bool
@@ -251,6 +279,7 @@ class GitHubClient
      */
     public function executeContributionGraphRequests(string $user, array $years): array
     {
+        $this->retryAfterSeconds = null;
         if (count($years) > self::MAX_ATTEMPTS) {
             throw new \InvalidArgumentException("Too many contribution years requested.", 400);
         }
@@ -260,6 +289,7 @@ class GitHubClient
         $this->deadlineNanoseconds ??= hrtime(true) + self::REQUEST_DEADLINE_SECONDS * 1_000_000_000;
 
         $tokens = [];
+        $responses = [];
         $requests = [];
         $multi = curl_multi_init();
         if ($multi === false) {
@@ -267,112 +297,124 @@ class GitHubClient
         }
 
         try {
-            foreach ($years as $year) {
-                if (!is_int($year)) {
-                    throw new \InvalidArgumentException("Contribution years must be integers.", 400);
-                }
-                $tokens[$year] = $this->getGitHubToken();
-                $this->consumeAttempt();
-                $query = $this->buildContributionGraphQuery($user, $year);
-                $requests[$year] = $this->getGraphQLCurlHandle($query, $tokens[$year], [
-                    "login" => $user,
-                    "from" => "$year-01-01T00:00:00Z",
-                    "to" => "$year-12-31T23:59:59Z",
-                ]);
-                if (curl_multi_add_handle($multi, $requests[$year]) !== CURLM_OK) {
-                    $handle = $requests[$year];
-                    unset($requests[$year]);
-                    curl_close($handle);
-                    throw new \RuntimeException("Unable to add a GitHub request to the request pool.", 502);
-                }
-            }
-
-            $running = 0;
-            do {
-                $this->getRemainingTimeoutMilliseconds();
-                $multiStatus = curl_multi_exec($multi, $running);
-                if ($multiStatus !== CURLM_OK && $multiStatus !== CURLM_CALL_MULTI_PERFORM) {
-                    throw new \RuntimeException("GitHub request pool failed.", 502);
-                }
-                if ($running) {
-                    $selectTimeoutMilliseconds = min(
-                        self::MAX_MULTI_SELECT_MILLISECONDS,
-                        $this->getRemainingTimeoutMilliseconds(),
-                    );
-                    $selected = curl_multi_select($multi, $selectTimeoutMilliseconds / 1000);
-                    if ($selected === -1) {
-                        usleep(1_000);
+            $yearBatches = array_chunk($years, self::MAX_CONCURRENT_REQUESTS);
+            foreach ($yearBatches as $yearBatch) {
+                foreach ($yearBatch as $year) {
+                    if (!is_int($year)) {
+                        throw new \InvalidArgumentException("Contribution years must be integers.", 400);
+                    }
+                    $tokens[$year] = $this->getGitHubToken();
+                    $this->consumeAttempt();
+                    $query = $this->buildContributionGraphQuery($user, $year);
+                    $requests[$year] = $this->getGraphQLCurlHandle($query, $tokens[$year], [
+                        "login" => $user,
+                        "from" => "$year-01-01T00:00:00Z",
+                        "to" => "$year-12-31T23:59:59Z",
+                    ]);
+                    if (curl_multi_add_handle($multi, $requests[$year]) !== CURLM_OK) {
+                        $handle = $requests[$year];
+                        unset($requests[$year]);
+                        throw new \RuntimeException("Unable to add a GitHub request to the request pool.", 502);
                     }
                 }
-            } while ($running);
 
-            $responses = [];
-            foreach ($requests as $year => $handle) {
-                $response = $this->readCurlResponse($handle, $user, (int) $year, "First attempt");
-                curl_multi_remove_handle($multi, $handle);
-                curl_close($handle);
-                unset($requests[$year]);
-
-                if (!$this->isValidGraphQLResponse($response["decoded"], $response["httpCode"])) {
-                    $this->handleTokenFailure(
-                        $tokens[$year],
-                        $response["decoded"],
-                        $response["httpCode"],
-                        $response["message"],
-                    );
-
-                    $retrySucceeded = false;
-                    for ($retryCount = 0; $retryCount < self::MAX_RETRIES_PER_REQUEST; ++$retryCount) {
-                        $retryToken = $this->getGitHubToken();
-                        $this->consumeAttempt();
-                        $retryHandle = null;
-                        try {
-                            $retryHandle = $this->getGraphQLCurlHandle(
-                                $this->buildContributionGraphQuery($user, (int) $year),
-                                $retryToken,
-                                [
-                                    "login" => $user,
-                                    "from" => "$year-01-01T00:00:00Z",
-                                    "to" => "$year-12-31T23:59:59Z",
-                                ],
-                            );
-                            $retryContents = curl_exec($retryHandle);
-                            $retryResponse = $this->readCurlResponse(
-                                $retryHandle,
-                                $user,
-                                (int) $year,
-                                "Retry",
-                                $retryContents,
-                            );
-                        } finally {
-                            if ($retryHandle instanceof \CurlHandle) {
-                                curl_close($retryHandle);
-                            }
-                        }
-
-                        if ($this->isValidGraphQLResponse($retryResponse["decoded"], $retryResponse["httpCode"])) {
-                            $response = $retryResponse;
-                            $retrySucceeded = true;
-                            break;
-                        }
-                        $this->handleTokenFailure(
-                            $retryToken,
-                            $retryResponse["decoded"],
-                            $retryResponse["httpCode"],
-                            $retryResponse["message"],
+                $running = 0;
+                do {
+                    $this->getRemainingTimeoutMilliseconds();
+                    $multiStatus = curl_multi_exec($multi, $running);
+                    if ($multiStatus !== CURLM_OK && $multiStatus !== CURLM_CALL_MULTI_PERFORM) {
+                        throw new \RuntimeException("GitHub request pool failed.", 502);
+                    }
+                    if ($running) {
+                        $selectTimeoutMilliseconds = min(
+                            self::MAX_MULTI_SELECT_MILLISECONDS,
+                            $this->getRemainingTimeoutMilliseconds(),
                         );
+                        $selected = curl_multi_select($multi, $selectTimeoutMilliseconds / 1000);
+                        if ($selected === -1) {
+                            usleep(1_000);
+                        }
                     }
-                    if (!$retrySucceeded) {
-                        throw new \RuntimeException("Failed to retrieve contributions after retry.", 502);
+                } while ($running);
+
+                foreach ($requests as $year => $handle) {
+                    $response = $this->readCurlResponse($handle, $user, (int) $year, "First attempt");
+                    curl_multi_remove_handle($multi, $handle);
+                    unset($requests[$year]);
+
+                    if (!$this->isValidGraphQLResponse($response["decoded"], $response["httpCode"])) {
+                        $this->handleTokenFailure(
+                            $tokens[$year],
+                            $response["decoded"],
+                            $response["httpCode"],
+                            $response["message"],
+                        );
+
+                        if (!$this->isRetryableResponse($response)) {
+                            throw new \RuntimeException("Failed to retrieve contributions from GitHub.", 502);
+                        }
+                        $retrySucceeded = false;
+                        for ($retryCount = 0; $retryCount < self::MAX_RETRIES_PER_REQUEST; ++$retryCount) {
+                            $retryToken = $this->getGitHubToken();
+                            $this->consumeAttempt();
+                            $retryHandle = null;
+                            try {
+                                $retryHandle = $this->getGraphQLCurlHandle(
+                                    $this->buildContributionGraphQuery($user, (int) $year),
+                                    $retryToken,
+                                    [
+                                        "login" => $user,
+                                        "from" => "$year-01-01T00:00:00Z",
+                                        "to" => "$year-12-31T23:59:59Z",
+                                    ],
+                                );
+                                $retryContents = curl_exec($retryHandle);
+                                $retryResponse = $this->readCurlResponse(
+                                    $retryHandle,
+                                    $user,
+                                    (int) $year,
+                                    "Retry",
+                                    $retryContents,
+                                );
+                            } finally {
+                                unset($retryHandle);
+                            }
+
+                            if ($this->isValidGraphQLResponse($retryResponse["decoded"], $retryResponse["httpCode"])) {
+                                $response = $retryResponse;
+                                $retrySucceeded = true;
+                                break;
+                            }
+                            $response = $retryResponse;
+                            $this->handleTokenFailure(
+                                $retryToken,
+                                $retryResponse["decoded"],
+                                $retryResponse["httpCode"],
+                                $retryResponse["message"],
+                            );
+                        }
+                        if (!$retrySucceeded) {
+                            $failureStatus =
+                                $response["curlErrno"] === CURLE_OPERATION_TIMEDOUT
+                                    ? 504
+                                    : ($response["httpCode"] === 429
+                                        ? 429
+                                        : 502);
+                            throw new ApiException(
+                                "Failed to retrieve contributions after retry.",
+                                $failureStatus,
+                                null,
+                                $this->retryAfterSeconds,
+                            );
+                        }
                     }
+                    $responses[$year] = $response["decoded"];
                 }
-                $responses[$year] = $response["decoded"];
             }
             return $responses;
         } finally {
             foreach ($requests as $request) {
                 curl_multi_remove_handle($multi, $request);
-                curl_close($request);
             }
             curl_multi_close($multi);
         }
@@ -386,6 +428,11 @@ class GitHubClient
     public function getGitHubTokens(): array
     {
         return $this->tokens;
+    }
+
+    public function getRetryAfterSeconds(): ?int
+    {
+        return $this->retryAfterSeconds;
     }
 
     public function validateCredentials(): void

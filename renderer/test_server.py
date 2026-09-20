@@ -197,6 +197,22 @@ class RendererServerTests(unittest.TestCase):
             response = connection.recv(4096)
         self.assertIn(b" 400 ", response)
 
+    def test_should_reject_headers_over_protocol_limit(self) -> None:
+        left, right = socket.socketpair()
+        try:
+            left.sendall(
+                b"POST /render HTTP/1.1\r\nHost: renderer\r\nX-Too-Large: "
+                + b"a" * server.MAX_HEADER_BYTES
+                + b"\r\n\r\n"
+            )
+            left.shutdown(socket.SHUT_WR)
+            with self.assertRaises(server.RendererError) as raised:
+                server._read_http_request(right, self.config)
+            self.assertEqual(raised.exception.status, 431)
+        finally:
+            left.close()
+            right.close()
+
     def test_should_enforce_request_and_render_bounds(self) -> None:
         status, _, _ = self.request(
             b"{}", content_length=self.config.max_body_bytes + 1
@@ -206,6 +222,15 @@ class RendererServerTests(unittest.TestCase):
         self.assertEqual(status, 413)
         status, _, _ = self.request(self.render_body(width=5_000))
         self.assertEqual(status, 400)
+
+    def test_should_reject_svg_structure_limits(self) -> None:
+        permissive = replace(self.config, max_svg_bytes=server.MAX_SVG_BYTES)
+        deeply_nested = "<svg>" + "<g>" * 65 + "</g>" * 65 + "</svg>"
+        with self.assertRaises(server.RendererError):
+            server._validate_svg(deeply_nested, permissive)
+        many_elements = "<svg>" + "<g/>" * 10_000 + "</svg>"
+        with self.assertRaises(server.RendererError):
+            server._validate_svg(many_elements, permissive)
 
     def test_should_return_gateway_error_when_child_fails(self) -> None:
         failing_config = replace(

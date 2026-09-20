@@ -55,10 +55,11 @@ If your local PHP installation cannot provide the PHPUnit extensions, use the re
 
 Node.js 24.x is not the application runtime. Vercel continues to execute the existing PHP functions; Node is used only by verification and renderer tooling. PNG rendering is sidecar-first: use the isolated renderer over its private Unix socket with a read-only filesystem, no public listener or network egress, no GitHub credentials, and resource/time limits. The direct Inkscape invocation in the PHP process is an explicit legacy local fallback for self-hosted installations; use it only when the sidecar is unavailable and accept its larger process-isolation risk.
 
-Run the checks from the sidecar host or image before cutover:
+Run the checks from the sidecar host or image before cutover. The project
+requires the Node 24.x line; the application itself remains PHP:
 
 ```bash
-test "$(node --version)" = "v24.7.0"
+node --version | grep -Eq '^v24\.'
 inkscape --version | grep -q '^Inkscape '
 ```
 
@@ -101,6 +102,14 @@ Open http://localhost:8000/?user=DenverCoder1 to run the project locally
 
 Open http://localhost:8000/demo/ to run the demo site
 
+For PNG work, configure the isolated renderer's private Unix socket and check
+`GET /health` before requesting a card. Do not expose the socket, add a public
+renderer port, or give the renderer GitHub credentials. The sidecar bounds SVG
+size, dimensions, pixel area, output size, deadline, and concurrency; direct
+Inkscape invocation is only a legacy local fallback. See
+[docs/operations.md](docs/operations.md) for the complete runbook and smoke
+checks.
+
 ### Running the tests
 
 Run the following command to run the PHPUnit test script which will verify that the tested functionality is still working.
@@ -108,6 +117,23 @@ Run the following command to run the PHPUnit test script which will verify that 
 ```bash
 composer test
 ```
+
+For a local PHP installation without PCOV or Xdebug, run PHPUnit without the
+coverage warning:
+
+```bash
+vendor/bin/phpunit --configuration tests/phpunit/phpunit.xml --no-coverage
+```
+
+The coverage-capable verification path is the Docker target used by CI:
+
+```bash
+docker build --target verification -t streak-stats-verification .
+```
+
+That target runs `composer check`, including PCOV coverage enforcement. Use
+`docker compose --profile test run --rm renderer-tests` for the isolated
+renderer suite.
 
 ## Linting
 
@@ -147,6 +173,12 @@ For deployments, preserve the existing metadata while syncing the fork: the Verc
 In Vercel, use encrypted **Production** Environment Variables for `TOKEN`, `TOKEN2`-style failover values, and the explicit `WHITELIST`. Configure the Hobby WAF rule before setting `EXTERNAL_RATE_LIMITER=true`, and keep that assertion Production-scoped. Protect every preview and preview deployment URL with Vercel Authentication or password protection. This deployment access control is separate from `WHITELIST` (which controls requested GitHub usernames) and from GitHub collaborator permissions (which control repository actions); changing one must not be treated as changing either of the others.
 
 Before a production cutover, run the sidecar health checks and compare fixed, sanitized requests against the canonical deployment and the candidate: status code, content type, SVG structure, and PNG bytes when PNG is supported. Exercise the demo separately with no token and confirm it uses fixture data. A differential mismatch blocks cutover until explained; do not print tokens or full request URLs in the comparison output.
+
+Record the source commit, candidate and previous-known-good deployment IDs,
+sanitized smoke results, renderer health result, and WAF evidence without
+recording token values or full URLs. A failed cutover is rolled back by
+promoting the recorded previous-known-good deployment, then repeating the
+smoke checks.
 
 #### Manual Vercel release-evidence checklist
 

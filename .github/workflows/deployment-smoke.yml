@@ -380,7 +380,7 @@ jobs:
                   test "$status" = "500"
                   grep -Eiq '^content-type: image/svg\+xml' /tmp/streak-missing-token.headers
                   grep -Eiq '^cache-control: (no-cache, )?no-store' /tmp/streak-missing-token.headers
-                  grep -Fq "Missing GitHub token" /tmp/streak-missing-token.body
+                  grep -Fq "Unable to process request." /tmp/streak-missing-token.body
                    if grep -Fq '<?php' /tmp/streak-missing-token.body; then
                        echo "Forbidden PHP source found in missing-token response" >&2
                        exit 1

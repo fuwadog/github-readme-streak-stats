@@ -26,6 +26,8 @@ jobs:
     verify:
         name: Pre-release verification
         runs-on: ubuntu-24.04
+        env:
+            VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         permissions:
             contents: read
             id-token: write
@@ -92,7 +94,7 @@ jobs:
             - name: Set up Node.js
               uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
-                  node-version: 24.7.0
+                  node-version: 24.20.0
                   cache: npm
 
             - name: Install formatter dependencies
@@ -103,6 +105,18 @@ jobs:
 
             - name: Run all validation gates
               run: composer check
+
+            - name: Probe authenticated production routes
+              if: ${{ env.VERCEL_AUTOMATION_BYPASS_SECRET != '' }}
+              run: |
+                  set -euo pipefail
+                  production_url='https://github-readme-streak-stats-black-phi.vercel.app'
+                  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+                      -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                      "$production_url/demo/" >/dev/null
+                  curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+                      -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                      "$production_url/demo/css/style.css" >/dev/null
 
             - name: Create attested source artifact
               run: |

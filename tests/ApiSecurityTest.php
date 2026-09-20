@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Client\GitHubClient;
+use App\Exception\ApiException;
 use App\Service\WhitelistService;
 use PHPUnit\Framework\TestCase;
 
@@ -33,8 +34,51 @@ final class SecuritySpyGitHubClient extends GitHubClient
     }
 }
 
+final class RetryAfterSpyGitHubClient extends GitHubClient
+{
+    public function __construct(private readonly ?int $retryAfterSeconds)
+    {
+        parent::__construct(["test-token"]);
+    }
+
+    public function getRetryAfterSeconds(): ?int
+    {
+        return $this->retryAfterSeconds;
+    }
+}
+
 final class ApiSecurityTest extends TestCase
 {
+    /** @return array{body:string,status:int,headers:array<int,string>} */
+    private function runRenderedOutput(string $method): array
+    {
+        $script =
+            '$_SERVER["REQUEST_METHOD"] = ' .
+            var_export($method, true) .
+            '; register_shutdown_function(static function (): void { echo "\\n__API_TEST_METADATA__" . json_encode(["status" => http_response_code(), "headers" => headers_list()]); }); require ' .
+            var_export(dirname(__DIR__) . "/api/card.php", true) .
+            '; renderOutput("test output", 418);';
+        $process = proc_open([PHP_BINARY, "-r", $script], [1 => ["pipe", "w"], 2 => ["pipe", "w"]], $pipes);
+        $this->assertIsResource($process);
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        $this->assertIsString($output);
+        $marker = "\n__API_TEST_METADATA__";
+        $markerPosition = strrpos($output, $marker);
+        $this->assertNotFalse($markerPosition);
+        $metadata = json_decode(substr($output, $markerPosition + strlen($marker)), true);
+        $this->assertIsArray($metadata);
+
+        return [
+            "body" => substr($output, 0, $markerPosition),
+            "status" => $metadata["status"],
+            "headers" => $metadata["headers"],
+        ];
+    }
+
     protected function tearDown(): void
     {
         unset($_SERVER["WHITELIST"]);
@@ -244,5 +288,79 @@ final class ApiSecurityTest extends TestCase
 
         $this->assertStringNotContainsString("test-token", $sanitized);
         $this->assertStringContainsString("[REDACTED]", $sanitized);
+    }
+
+    public function testHeadPreservesGetStatusAndHeadersWithoutEmittingBody(): void
+    {
+        $get = $this->runRenderedOutput("GET");
+        $head = $this->runRenderedOutput("HEAD");
+        $card = file_get_contents(dirname(__DIR__) . "/api/card.php");
+
+        $this->assertSame($get["status"], $head["status"]);
+        $this->assertSame($get["headers"], $head["headers"]);
+        $this->assertNotSame("", $get["body"]);
+        $this->assertSame("", $head["body"]);
+        $this->assertIsString($card);
+        $this->assertStringContainsString('header("Content-Type: {$response["contentType"]}");', $card);
+        $this->assertStringContainsString(
+            'if (strtoupper((string) ($_SERVER["REQUEST_METHOD"] ?? "GET")) === "HEAD")',
+            $card,
+        );
+    }
+
+    public function testRetryAfterAcceptsOnlyNonNegativeIntegerSeconds(): void
+    {
+        $client = new GitHubClient(["test-token"]);
+        $method = new ReflectionMethod($client, "normalizeRetryAfter");
+        $method->setAccessible(true);
+
+        foreach ([0, 42, "0", "42"] as $value) {
+            $this->assertSame((int) $value, $method->invoke($client, $value));
+        }
+        foreach ([-1, "-1", "", "1.5", "seconds", null, 1.5] as $value) {
+            $this->assertNull($method->invoke($client, $value));
+        }
+    }
+
+    public function testApiExceptionCarriesRetryAfterMetadata(): void
+    {
+        $exception = new ApiException("rate limited", 429, null, 37);
+
+        $this->assertSame(37, $exception->getRetryAfterSeconds());
+        $this->assertNull((new ApiException("unavailable"))->getRetryAfterSeconds());
+    }
+
+    public function testRetryAfterMetadataIsPropagatedWhenContributionFetchFails(): void
+    {
+        $client = new RetryAfterSpyGitHubClient(23);
+
+        try {
+            rethrowContributionFetchFailure(new RuntimeException("rate limited", 429), $client);
+            $this->fail("The contribution fetch failure must be rethrown.");
+        } catch (ApiException $error) {
+            $this->assertSame(23, $error->getRetryAfterSeconds());
+            $this->assertSame(429, $error->getCode());
+        }
+
+        $existing = new ApiException("rate limited", 429, null, 11);
+        try {
+            rethrowContributionFetchFailure($existing, $client);
+            $this->fail("The existing API exception must be rethrown.");
+        } catch (ApiException $error) {
+            $this->assertSame($existing, $error);
+        }
+    }
+
+    public function testRetryAfterHeadersCoverApiAndLocalRateLimitFailures(): void
+    {
+        $index = file_get_contents(dirname(__DIR__) . "/api/index.php");
+
+        $this->assertIsString($index);
+        $this->assertStringContainsString('header("Retry-After: " . $error->getRetryAfterSeconds());', $index);
+        $this->assertStringContainsString('header("Retry-After: 60");', $index);
+        $this->assertStringContainsString(
+            'if ($error instanceof \\App\\Exception\\ApiException && $error->getRetryAfterSeconds() !== null)',
+            $index,
+        );
     }
 }

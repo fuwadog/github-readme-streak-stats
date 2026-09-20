@@ -45,17 +45,6 @@ function fileModifiedTime(string $filename): int
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Global site tag (gtag.js) - Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-48CYVH0XEF"></script>
-    <script>
-        window.dataLayer = window.dataLayer || [];
-
-        function gtag() {
-            dataLayer.push(arguments);
-        }
-        gtag('js', new Date());
-        gtag('config', 'G-48CYVH0XEF');
-    </script>
     <title>GitHub Readme Streak Stats Demo</title>
     <link rel="stylesheet" href="./css/style.css?v=<?= fileModifiedTime("./css/style.css") ?>">
     <link rel="stylesheet" href="./css/toggle-dark.css?v=<?= fileModifiedTime("./css/toggle-dark.css") ?>">
@@ -76,7 +65,6 @@ function fileModifiedTime(string $filename): int
     <script type="text/javascript" src="./js/jscolor.min.js?v=<?= fileModifiedTime(
         "./js/jscolor.min.js",
     ) ?>" defer></script>
-    <script async defer src="https://buttons.github.io/buttons.js"></script>
 </head>
 
 <body <?php echo $darkmode === "on" ? 'data-theme="dark"' : ""; ?>>
@@ -192,8 +180,8 @@ function fileModifiedTime(string $filename): int
                 <label for="card-width">Card Width</label>
                 <input class="param" type="number" id="card-width" name="card_width" placeholder="495" value="495" step="1" min="300" />
 
-                <label for="card-width">Card Height</label>
-                <input class="param" type="number" id="card-width" name="card_height" placeholder="195" value="195" step="1" min="170" />
+                <label for="card-height">Card Height</label>
+                <input class="param" type="number" id="card-height" name="card_height" placeholder="195" value="195" step="1" min="170" />
 
                 <label for="type">Output Type</label>
                 <select class="param" id="type" name="type">
@@ -238,9 +226,10 @@ function fileModifiedTime(string $filename): int
             </form>
         </div>
 
-        <div class="output top-bottom-split">
+        <div class="output top-bottom-split" aria-busy="false">
             <div class="top">
                 <h2>Preview</h2>
+                <p id="preview-status" role="status" aria-live="polite" aria-atomic="true"></p>
                 <img alt="GitHub Readme Streak Stats" src="preview.php?user=" />
                 <div class="json" style="display: none;">
                     <pre></pre>
@@ -296,7 +285,11 @@ function fileModifiedTime(string $filename): int
         </div>
     </div>
 
-    <a href="javascript:toggleTheme()" class="darkmode" title="toggle dark mode">
+    <button type="button" class="darkmode" title="<?= $darkmode === "on"
+        ? "Switch to light mode"
+        : "Switch to dark mode" ?>" aria-label="<?= $darkmode === "on"
+    ? "Switch to light mode"
+    : "Switch to dark mode" ?>" aria-pressed="<?= $darkmode === "on" ? "true" : "false" ?>">
          <span id="darkmode-icon">
             <?php if ($darkmode === "on"): ?>
                 🌞
@@ -304,7 +297,7 @@ function fileModifiedTime(string $filename): int
                 🌙
             <?php endif; ?>
          </span>
-    </a>
+    </button>
 </body>
 
 </html>

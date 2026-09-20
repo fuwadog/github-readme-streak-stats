@@ -87,7 +87,7 @@ final class DemoSecurityTest extends TestCase
         $linked = false;
         try {
             try {
-                $linked = symlink($outsidePath, $allowedPath);
+                $linked = @symlink($outsidePath, $allowedPath);
             } catch (\Throwable $error) {
                 $this->markTestSkipped("Symlinks are unavailable: {$error->getMessage()}");
             }
@@ -163,6 +163,15 @@ final class DemoSecurityTest extends TestCase
         $this->assertSame(400, $response["code"]);
     }
 
+    public function testDemoIgnoresUnknownQueryParameters(): void
+    {
+        $script = file_get_contents(dirname(__DIR__) . "/api/demo/js/script.js");
+        $this->assertIsString($script);
+        $this->assertStringContainsString("if (!propertyOption) {", $script);
+        $this->assertStringContainsString("option.value === key", $script);
+        $this->assertStringContainsString("return;\n        }\n        // add advanced property", $script);
+    }
+
     public function testPreviewResponseContentTypesMatchRequestedOutput(): void
     {
         $stats = [
@@ -194,5 +203,50 @@ final class DemoSecurityTest extends TestCase
         } finally {
             $GLOBALS["svgGenerator"] = $originalGenerator;
         }
+    }
+
+    public function testDemoFormUsesUniqueIdsAndMatchingLabels(): void
+    {
+        $markup = file_get_contents(dirname(__DIR__) . "/api/demo/index.php");
+        $this->assertIsString($markup);
+
+        preg_match_all('/\bid="([^"]+)"/', $markup, $idMatches);
+        $this->assertCount(count(array_unique($idMatches[1])), $idMatches[1]);
+
+        preg_match_all('/<label\s+for="([^"]+)"/', $markup, $labelMatches);
+        foreach ($labelMatches[1] as $labelId) {
+            $this->assertStringContainsString('id="' . $labelId . '"', $markup);
+        }
+    }
+
+    public function testDemoThemeControlIsKeyboardOperableAndHasNoJavascriptLinks(): void
+    {
+        $markup = file_get_contents(dirname(__DIR__) . "/api/demo/index.php");
+        $this->assertIsString($markup);
+        $this->assertMatchesRegularExpression(
+            '/<button(?=[^>]*class="darkmode")(?=[^>]*type="button")[^>]*>/',
+            $markup,
+        );
+        $this->assertStringNotContainsString('href="javascript:', $markup);
+        $this->assertStringNotContainsString("href='javascript:", $markup);
+    }
+
+    public function testDemoCheckboxesRemainFocusableAndDiscoverable(): void
+    {
+        $styles = file_get_contents(dirname(__DIR__) . "/api/demo/css/style.css");
+        $this->assertIsString($styles);
+        $this->assertStringNotContainsString(".checkbox-buttons input {\n  display: none", $styles);
+        $this->assertStringContainsString("position: absolute", $styles);
+        $this->assertStringContainsString("clip: rect(0, 0, 0, 0)", $styles);
+        $this->assertStringContainsString(":focus-visible + label", $styles);
+    }
+
+    public function testDemoDoesNotLoadThirdPartyScriptsUnconditionally(): void
+    {
+        $markup = file_get_contents(dirname(__DIR__) . "/api/demo/index.php");
+        $this->assertIsString($markup);
+        $this->assertStringNotContainsString("googletagmanager.com", $markup);
+        $this->assertStringNotContainsString("buttons.github.io/buttons.js", $markup);
+        $this->assertStringContainsString('src="./js/script.js', $markup);
     }
 }

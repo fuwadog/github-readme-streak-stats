@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Use PHP 8.4 on the supported Debian Trixie base.
+# The verification image is the canonical Node.js 24.20.0 toolchain; keep its
+# digest aligned with the development container's verification toolchain.
 FROM docker.io/library/node:24.20.0-trixie-slim@sha256:50c3b2f6988dfc307b86e5301d69611af31f4789bdf232863b07d3b02fe55ae0 AS verification-node
 
 FROM php:8.4-apache-trixie@sha256:51da594c844a97f31b1cd6b1ac6660982f40788f4fe13e75f7fd39e2f9b58651 AS runtime-base
@@ -28,9 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git=1:2.47.3-0+deb13u1 \
     unzip=6.0-29+deb13u1 \
     libicu-dev=76.1-4 \
-    libcurl4-openssl-dev=8.14.1-2+deb13u4 \
-    curl=8.14.1-2+deb13u4 \
-    libcap2-bin=1:2.75-10+deb13u1+b1 \
+    libcurl4-openssl-dev=8.14.1-2+deb13u5 \
+    curl=8.14.1-2+deb13u5 \
+    libcap2-bin=1:2.75-10+deb13u1+b3 \
     && docker-php-ext-configure intl \
     && docker-php-ext-install -j"$(nproc)" curl intl \
     && php -m | grep -qx curl \

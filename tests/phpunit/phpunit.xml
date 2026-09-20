@@ -8,14 +8,7 @@
 >
   <testsuites>
     <testsuite name="main">
-      <file>../AnimationTest.php</file>
-      <file>../ApiSecurityTest.php</file>
-      <file>../DemoSecurityTest.php</file>
-      <file>../OptionsTest.php</file>
-      <file>../PngRendererTest.php</file>
-      <file>../RenderTest.php</file>
-      <file>../StatsTest.php</file>
-      <file>../TranslationsTest.php</file>
+      <directory suffix=".php">..</directory>
     </testsuite>
   </testsuites>
   <source>
@@ -23,4 +16,9 @@
       <directory suffix=".php">../../api</directory>
     </include>
   </source>
+  <coverage>
+    <report>
+      <clover outputFile="../../coverage.xml" />
+    </report>
+  </coverage>
 </phpunit>

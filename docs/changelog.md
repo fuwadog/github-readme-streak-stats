@@ -2,7 +2,8 @@
 
 This file records the changes made during the current cleanup and hardening
 effort. The work is intentionally unreleased until the branch is reviewed,
-committed, pushed, and deployed by the repository owner.
+committed, pushed, and deployed by the repository owner. Repository and
+container verification below is not production evidence.
 
 ## Unreleased
 
@@ -82,7 +83,7 @@ committed, pushed, and deployed by the repository owner.
 - Added renderer health, protocol, bounds, timeout, capacity, and invalid PNG
   coverage.
 
-### Tests and verification
+### Repository and container verification (not production evidence)
 
 - Replaced live GitHub-coupled statistics tests with deterministic fixtures and
   injected test doubles.
@@ -94,15 +95,16 @@ committed, pushed, and deployed by the repository owner.
 - PHPStan, Composer validation/audit/checks, npm audit, Prettier, actionlint,
   Docker Compose validation, image builds, health checks, and local smoke tests
   passed in the available verification environment.
-- Verified the allowlisted `fuwadog` canonical endpoint returned HTTP 200 with
-  an SVG response and public cache headers.
-- Verified denied-user behavior returns HTTP 403 with the whitelist message and
-  non-cacheable headers.
+- Verified the allowlist and denied-user cases with deterministic repository
+  tests; this does not verify the deployed production allowlist.
+- Production status, cache headers, WAF coverage, secret provenance, and
+  deployed routes remain pending the manual release-evidence checklist.
 
 ### Tooling, containers, and CI
 
-- Standardized the Node.js toolchain on version 24 for development and CI
-  tooling.
+- Standardized the Node.js toolchain on the `24.x` line for development and CI
+  tooling; the verified source image is Node `24.20.0`, while Node is not the
+  Vercel application runtime.
 - Added reproducible npm lockfile installation and formatter validation.
 - Expanded Composer scripts for tests, linting, static analysis, coverage, and
   aggregate checks.
@@ -156,5 +158,6 @@ committed, pushed, and deployed by the repository owner.
   `WHITELIST` provenance, preview protection, and deployed one-function state
   still require manual confirmation after deployment.
 - The current Vercel production deployment predates this local work. Its stale
-  route and PNG responses are not evidence against the current branch.
+  route and PNG responses are not evidence for or against the current branch;
+  deploy-time evidence is still required.
 - No commit, push, or deployment was performed as part of this effort.

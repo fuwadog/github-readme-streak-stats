@@ -22,7 +22,7 @@ function getCacheEnvironmentValue(string $key): ?string
 
 function isCacheDisabled(): bool
 {
-    return strtolower(getCacheEnvironmentValue("DISABLE_CACHE") ?? "") === "true";
+    return in_array(strtolower(getCacheEnvironmentValue("DISABLE_CACHE") ?? ""), ["true", "1"], true);
 }
 
 function setNoStoreHeaders(): void
@@ -183,6 +183,9 @@ function renderOutput(
     $status = $response["status"] ?? $responseCode;
     http_response_code($status);
     header("Content-Type: {$response["contentType"]}");
+    foreach ($response["headers"] ?? [] as $name => $value) {
+        header("$name: $value");
+    }
     $hasCacheControl = false;
     foreach (headers_list() as $responseHeader) {
         if (stripos($responseHeader, "Cache-Control:") === 0) {
@@ -193,9 +196,26 @@ function renderOutput(
     if ($status >= 400) {
         setNoStoreHeaders();
     } elseif ($cacheControl !== null) {
-        header("Cache-Control: $cacheControl");
+        header("Cache-Control: $cacheControl, stale-while-revalidate=60, stale-if-error=86400");
     } elseif (!$hasCacheControl) {
-        header(isCacheDisabled() ? "Cache-Control: no-store" : "Cache-Control: public, max-age=86400");
+        header(
+            isCacheDisabled()
+                ? "Cache-Control: no-store"
+                : "Cache-Control: public, max-age=86400, stale-while-revalidate=60, stale-if-error=86400",
+        );
+    }
+    if ($status < 400 && !isCacheDisabled()) {
+        $etag = '"' . hash("sha256", (string) $response["body"]) . '"';
+        header("ETag: $etag");
+        $ifNoneMatch = $_SERVER["HTTP_IF_NONE_MATCH"] ?? "";
+        if (is_string($ifNoneMatch) && in_array($etag, array_map("trim", explode(",", $ifNoneMatch)), true)) {
+            http_response_code(304);
+            header("Content-Length: 0");
+            exit();
+        }
+    }
+    if (strtoupper((string) ($_SERVER["REQUEST_METHOD"] ?? "GET")) === "HEAD") {
+        exit();
     }
     exit($response["body"]);
 }

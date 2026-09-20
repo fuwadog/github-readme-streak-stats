@@ -12,6 +12,8 @@ const MAX_REQUEST_BODY_BYTES = 8192;
 const MAX_RATE_METADATA_BYTES = 8192;
 const CLIENT_ERROR_MESSAGE = "Unable to process request.";
 const INTERNAL_ROUTES = ["api", "demo-index", "demo-preview", "demo-static"];
+const API_RESPONSE_V1 = "API_RESPONSE_V1";
+const RATE_LIMIT_V1 = "RATE_LIMIT_V1";
 
 // Set UTC timezone for consistent date handling across all environments
 date_default_timezone_set("UTC");
@@ -129,10 +131,11 @@ function getClientIp(): string
  */
 function checkRateLimit(): bool
 {
-    if (isServerlessEnvironment()) {
-        if (!isExternalRateLimitConfigured()) {
-            throw new RuntimeException("Serverless rate limiting requires an external rate limiter.", 500);
-        }
+    $externalRateLimitConfigured = isExternalRateLimitConfigured();
+    if (isServerlessEnvironment() && !$externalRateLimitConfigured) {
+        throw new RuntimeException("Serverless rate limiting requires an external rate limiter.", 500);
+    }
+    if ($externalRateLimitConfigured) {
         return true;
     }
 
@@ -401,5 +404,8 @@ try {
         $error->getMessage() === "User not in whitelist."
             ? $error->getMessage()
             : CLIENT_ERROR_MESSAGE;
+    if ($error instanceof \App\Exception\ApiException && $error->getRetryAfterSeconds() !== null) {
+        header("Retry-After: " . $error->getRetryAfterSeconds());
+    }
     renderOutput($message, $status);
 }

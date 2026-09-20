@@ -194,7 +194,15 @@ h2 {
 }
 
 .checkbox-buttons input {
-  display: none !important;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .checkbox-buttons input[type="checkbox"] + label {
@@ -215,6 +223,11 @@ h2 {
 .checkbox-buttons input[type="checkbox"]:checked + label {
   background: var(--text);
   color: var(--background);
+}
+
+.checkbox-buttons input[type="checkbox"]:focus-visible + label {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }
 
 .checkbox-buttons input[type="checkbox"]:disabled + label {
@@ -294,6 +307,14 @@ input:focus:invalid {
 
 .output img {
   max-width: 100%;
+}
+
+#preview-status {
+  min-height: 1.5em;
+}
+
+#preview-status.error {
+  color: var(--red);
 }
 
 .output .warning {

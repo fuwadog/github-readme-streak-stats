@@ -30,7 +30,7 @@ jobs:
             - name: Setup Node.js
               uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
               with:
-                  node-version: 24.7.0
+                  node-version: 24.20.0
                   cache: npm
 
             - name: Install locked formatter dependencies
@@ -38,3 +38,14 @@ jobs:
 
             - name: Check formatting
               run: npx --no-install prettier --check "**/*.{php,md,js,css}"
+
+            - name: Check demo PHP and accessibility contracts
+              run: |
+                  set -euo pipefail
+                  php -l api/demo/index.php
+                  php -l api/demo/preview.php
+                  php -l api/demo/vercel-static.php
+                  grep -Eq '<html lang="[^"]+"' api/demo/index.php
+                  grep -Fq '<title>' api/demo/index.php
+                  grep -Fq 'aria-label=' api/demo/index.php
+                  grep -Fq 'alt="' api/demo/index.php

@@ -292,7 +292,7 @@ jobs:
                           --dump-header "/tmp/streak-direct${safe_path}.headers" \
                           --output "/tmp/streak-direct${safe_path}.body" \
                           --write-out '%{http_code}' \
-                          "$CANONICAL_URL$path")"
+                          "$SELF_HOSTED_URL$path")"
                       test "$status" = "404"
                       grep -Eiq '^content-type: text/plain' "/tmp/streak-direct${safe_path}.headers"
                       grep -Eiq '^cache-control: public, max-age=0, must-revalidate' "/tmp/streak-direct${safe_path}.headers"

@@ -288,7 +288,7 @@ jobs:
                   set -euo pipefail
                   for path in /api/index.php /api/card.php /api/stats.php /api/demo/index.php /api/demo/preview.php; do
                       safe_path="${path//\//-}"
-                      status="$(curl --proto '=https' --tlsv1.2 --silent --show-error --path-as-is \
+                      status="$(curl --silent --show-error --path-as-is \
                           --dump-header "/tmp/streak-direct${safe_path}.headers" \
                           --output "/tmp/streak-direct${safe_path}.body" \
                           --write-out '%{http_code}' \

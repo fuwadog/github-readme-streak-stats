@@ -8,24 +8,63 @@ FROM php:8.4-apache-trixie@sha256:51da594c844a97f31b1cd6b1ac6660982f40788f4fe13e
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Install system dependencies and PHP extensions in one layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies and PHP extensions in one layer. Keep package
+# resolution on the same immutable snapshot used by the renderer image.
+RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/* \
+    && printf '%s\n' \
+        'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260915T000000Z trixie main' \
+        'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20260915T000000Z trixie-security main' \
+        > /etc/apt/sources.list.d/debian-snapshot.list \
+    && apt-get -o APT::Update::Error-Mode=any update \
+    && for package_version in \
+        'apache2=2.4.68-1~deb13u1' \
+        'openssl=3.5.7-1~deb13u2' \
+        'libxml2=2.12.7+dfsg+really2.9.14-2.1+deb13u3' \
+        'libxml2-dev=2.12.7+dfsg+really2.9.14-2.1+deb13u3' \
+        'perl=5.40.1-6+deb13u1' \
+        'libaprutil1t64=1.6.3-3+deb13u1' \
+        'libgnutls30t64=3.8.9-3+deb13u4' \
+        'libc6=2.41-12+deb13u4' \
+        'libc-bin=2.41-12+deb13u4' \
+        'libc-dev-bin=2.41-12+deb13u4' \
+        'linux-libc-dev=6.12.107-1' \
+        'libexpat1=2.8.3-1~deb13u1' \
+        'dpkg=1.22.22' \
+        'libpam0g=1.7.0-5' \
+        'libpcre2-8-0=10.46-1~deb13u2' \
+        'libsqlite3-0=3.46.1-7+deb13u2' \
+        'git=1:2.47.3-0+deb13u1' \
+        'unzip=6.0-29+deb13u1' \
+        'libicu-dev=76.1-4' \
+        'libicu76=76.1-4' \
+        'libcurl4-openssl-dev=8.14.1-2+deb13u5' \
+        'curl=8.14.1-2+deb13u5' \
+        'libcap2-bin=1:2.75-10+deb13u1+b3'; do \
+        package="${package_version%%=*}"; \
+        expected="${package_version#*=}"; \
+        candidate="$(apt-cache policy "${package}" | awk '/Candidate:/ { print $2; exit }')"; \
+        if [[ "${candidate}" != "${expected}" ]]; then \
+            printf 'ERROR: snapshot candidate for %s is %s; expected %s\n' "${package}" "${candidate:-<none>}" "${expected}" >&2; \
+            exit 1; \
+        fi; \
+    done \
+    && apt-get install -y --no-install-recommends \
     apache2=2.4.68-1~deb13u1 \
     openssl=3.5.7-1~deb13u2 \
     libxml2=2.12.7+dfsg+really2.9.14-2.1+deb13u3 \
     libxml2-dev=2.12.7+dfsg+really2.9.14-2.1+deb13u3 \
-    perl=5.40.1-6 \
+    perl=5.40.1-6+deb13u1 \
     libaprutil1t64=1.6.3-3+deb13u1 \
     libgnutls30t64=3.8.9-3+deb13u4 \
-    libc6=2.41-12+deb13u3 \
-    libc-bin=2.41-12+deb13u3 \
-    libc-dev-bin=2.41-12+deb13u3 \
+    libc6=2.41-12+deb13u4 \
+    libc-bin=2.41-12+deb13u4 \
+    libc-dev-bin=2.41-12+deb13u4 \
     linux-libc-dev=6.12.107-1 \
     libexpat1=2.8.3-1~deb13u1 \
     dpkg=1.22.22 \
     libpam0g=1.7.0-5 \
-    libpcre2-8-0=10.46-1~deb13u1 \
-    libsqlite3-0=3.46.1-7+deb13u1 \
+    libpcre2-8-0=10.46-1~deb13u2 \
+    libsqlite3-0=3.46.1-7+deb13u2 \
     git=1:2.47.3-0+deb13u1 \
     unzip=6.0-29+deb13u1 \
     libicu-dev=76.1-4 \
@@ -33,10 +72,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev=8.14.1-2+deb13u5 \
     curl=8.14.1-2+deb13u5 \
     libcap2-bin=1:2.75-10+deb13u1+b3 \
+    && echo 'Building PHP extensions' \
     && docker-php-ext-configure intl \
     && docker-php-ext-install -j"$(nproc)" curl intl \
     && php -m | grep -qx curl \
     && php -m | grep -qx intl \
+    && echo 'Applying Apache bind capability' \
     && setcap cap_net_bind_service=+ep /usr/sbin/apache2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

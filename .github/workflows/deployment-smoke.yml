@@ -11,6 +11,10 @@ on:
         branches:
             - main
             - vercel
+    pull_request:
+        branches:
+            - main
+            - vercel
     schedule:
         - cron: "17 */6 * * *"
 
@@ -235,7 +239,8 @@ jobs:
               run: |
                   set -euo pipefail
                   set +x
-                   docker compose up -d --build renderer web
+                   docker compose --progress plain build renderer web
+                   docker compose up -d renderer web
                    docker compose exec -T renderer python3 -c \
                        "import os,stat; raise SystemExit(0 if stat.S_ISSOCK(os.stat('/run/streak-renderer/renderer.sock').st_mode) else 1)"
                    renderer_id="$(docker compose ps -q renderer)"

@@ -155,6 +155,12 @@ RUN a2enmod rewrite headers && \
     <VirtualHost *:80>\n\
     ServerAdmin webmaster@localhost\n\
     DocumentRoot /var/www/html/api\n\
+    RewriteEngine On\n\
+    RewriteRule ^/api/.*\\.php(?:/.*)?$ - [R=404,END]\n\
+    <LocationMatch "^/api/.*\\.php(?:/.*)?$">\n\
+    Header always set Content-Type "text/plain"\n\
+    Header always set Cache-Control "public, max-age=0, must-revalidate"\n\
+    </LocationMatch>\n\
     <Directory /var/www/html/api>\n\
     Options -Indexes\n\
     AllowOverride None\n\

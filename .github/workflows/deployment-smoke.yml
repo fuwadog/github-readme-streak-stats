@@ -229,6 +229,7 @@ jobs:
 
             - name: Start self-hosted smoke service
               env:
+                  TOKEN: ${{ github.token }}
                   WHITELIST: DenverCoder1
                   CACHE_TTL_DEFAULT: "60"
               run: |

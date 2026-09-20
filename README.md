@@ -307,7 +307,7 @@ You can transfer the files to any webserver using FTP or other means, then refer
 
 ### 🐳 Docker
 
-Docker is a great option for self-hosting with full control over your environment. All features are supported including PNG rendering with Inkscape. Expand the instructions below to learn how to deploy with Docker.
+Docker is a great option for self-hosting with full control over your environment. The production image supports SVG and JSON output. Use the Compose deployment to add the private, isolated PNG renderer. Expand the instructions below to learn how to deploy with Docker.
 
 <details>
   <summary><b>Instructions for deploying with Docker</b></summary>
@@ -345,6 +345,16 @@ Docker is a great option for self-hosting with full control over your environmen
    ```
 
 7. Visit http://localhost:8080 to access your self-hosted instance
+
+For PNG rendering, use the isolated renderer with Docker Compose instead of the
+single web container:
+
+```bash
+docker compose up -d --build
+```
+
+The renderer is available only through its private socket and is not exposed as
+a public port. Stop the stack with `docker compose down` when finished.
 
 </details>
 

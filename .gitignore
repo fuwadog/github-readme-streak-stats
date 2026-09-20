@@ -33,6 +33,7 @@ cache/
 !.vercel/project.json
 coverage/
 coverage.xml
+coverage.debug.xml
 .ruff_cache/
 renderer/__pycache__/
 __pycache__/

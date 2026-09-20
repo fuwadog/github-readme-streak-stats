@@ -89,9 +89,14 @@ container verification below is not production evidence.
   injected test doubles.
 - Added API security, demo security, PNG renderer, animation, route, fallback,
   escaping, cache, and direct-PHP exposure coverage.
-- Linux container verification passed with 107 PHPUnit tests and 6,768
-  assertions.
-- Renderer unit tests passed: 11 tests.
+- Linux container verification passed with 137 PHPUnit tests and 6,886
+  assertions at 80.07% line coverage.
+- Renderer unit tests passed: 13 tests.
+- The production image and Docker Compose build passed. The production
+  container loaded PHP `intl`; API GET and HEAD probes returned valid HTTP 200
+  SVG responses, and the Compose logs were free of startup warnings.
+- Host PHP 8.5 verification passed without coverage with 137 tests and 6,847
+  assertions; 15 platform skips remain for Windows-only Unix-socket cases.
 - PHPStan, Composer validation/audit/checks, npm audit, Prettier, actionlint,
   Docker Compose validation, image builds, health checks, and local smoke tests
   passed in the available verification environment.
@@ -115,6 +120,10 @@ container verification below is not production evidence.
 - Expanded dependency automation to Composer, npm, Docker, and GitHub Actions.
 - Hardened production and development container layouts, extensions, runtime
   users, health checks, and environment handling.
+- Removed obsolete PHP 8.5-deprecated `curl_close()` calls so deprecation text
+  cannot contaminate SVG responses.
+- Retained the ICU runtime library required by PHP `intl` after removing Docker
+  build headers, and cleaned the Apache container configuration.
 - Added deployment smoke checks for routes, whitelist behavior, cache headers,
   missing-token handling, direct-PHP exposure, renderer health, and fallback
   behavior.

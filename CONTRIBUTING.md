@@ -118,6 +118,23 @@ Run the following command to run the PHPUnit test script which will verify that 
 composer test
 ```
 
+For a local PHP installation without PCOV or Xdebug, run PHPUnit without the
+coverage warning:
+
+```bash
+vendor/bin/phpunit --configuration tests/phpunit/phpunit.xml --no-coverage
+```
+
+The coverage-capable verification path is the Docker target used by CI:
+
+```bash
+docker build --target verification -t streak-stats-verification .
+```
+
+That target runs `composer check`, including PCOV coverage enforcement. Use
+`docker compose --profile test run --rm renderer-tests` for the isolated
+renderer suite.
+
 ## Linting
 
 This project uses Prettier for formatting PHP, Markdown, JavaScript and CSS files.

@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git=1:2.47.3-0+deb13u1 \
     unzip=6.0-29+deb13u1 \
     libicu-dev=76.1-4 \
+    libicu76=76.1-4 \
     libcurl4-openssl-dev=8.14.1-2+deb13u5 \
     curl=8.14.1-2+deb13u5 \
     libcap2-bin=1:2.75-10+deb13u1+b3 \
@@ -103,13 +104,13 @@ RUN apt-get purge -y --auto-remove \
 RUN a2enmod rewrite headers && \
     printf '%b' 'ServerTokens Prod\n\
     ServerSignature Off\n\
+    ServerName localhost\n\
     PassEnv TOKEN\n\
     PassEnv TOKEN2\n\
     PassEnv WHITELIST\n\
     PassEnv DISABLE_CACHE\n\
     PassEnv CACHE_TTL\n\
     PassEnv CACHE_TTL_DEFAULT\n\
-    PassEnv RATE_LIMITER_MODE\n\
     <VirtualHost *:80>\n\
     ServerAdmin webmaster@localhost\n\
     DocumentRoot /var/www/html/api\n\
